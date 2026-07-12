@@ -206,6 +206,7 @@
     { key: "enlevement", label: "Enlèvement", unit: "m²" },
     { key: "membrane", label: "Membrane", unit: "m²" },
     { key: "velux", label: "Velux", unit: "unité" },
+    { key: "habillage_velux", label: "Habillage de velux", unit: "unité" },
     { key: "lucarne", label: "Lucarne", unit: "unité" },
     { key: "placo_hydro", label: "Placo Hydro", unit: "m²" },
     { key: "wc_suspendus", label: "WC Suspendus", unit: "unité" },
@@ -236,9 +237,31 @@
     return (m.largeur || 0) * (m.hauteur || 0) * (m.qty || 1);
   }
 
+  // Ouvertures ITI : pas d'appui séparé comme en ITE, tout est dans le linteau (habillage).
+  // Fenêtre = 4 côtés, Porte = 3 côtés (pas de sol), Velux = pas de linteau (forfait manuel "Habillage de velux").
+  const ITI_OPENING_LABELS = { fenetre: "Fenêtre", porte: "Porte", velux: "Velux" };
+
+  function computePosteOpening(o) {
+    const surface = (o.largeur || 0) * (o.hauteur || 0) * (o.qty || 1);
+    let linteau = 0;
+    if (o.type === "fenetre") linteau = 2 * (o.largeur + o.hauteur) * o.qty;
+    else if (o.type === "porte") linteau = (2 * o.hauteur + o.largeur) * o.qty;
+    return { surface, linteau };
+  }
+
   function computePoste(poste) {
-    const surface = (poste.mesures || []).reduce((sum, m) => sum + computeMesureArea(m), 0);
+    const surfaceBrute = (poste.mesures || []).reduce((sum, m) => sum + computeMesureArea(m), 0);
+
+    let ouvSurface = 0, linteauTotal = 0;
+    for (const o of (poste.ouvertures || [])) {
+      const oc = computePosteOpening(o);
+      ouvSurface += oc.surface;
+      linteauTotal += oc.linteau;
+    }
+    const surface = Math.max(0, surfaceBrute - ouvSurface);
+
     const main = htTtc(surface * (poste.prix || 0), poste.tva);
+    const linteauLine = htTtc(linteauTotal * (poste.prixLinteau || 0), poste.tva);
 
     let extrasHt = 0, extrasTtc = 0;
     for (const ex of (poste.extras || [])) {
@@ -249,13 +272,16 @@
     }
 
     return {
+      surfaceBrute,
+      ouvSurface,
       surface,
-      mainHt: main.ht,
-      mainTtc: main.ttc,
+      linteauTotal,
+      mainHt: main.ht + linteauLine.ht,
+      mainTtc: main.ttc + linteauLine.ttc,
       extrasHt,
       extrasTtc,
-      totalHt: main.ht + extrasHt,
-      totalTtc: main.ttc + extrasTtc,
+      totalHt: main.ht + linteauLine.ht + extrasHt,
+      totalTtc: main.ttc + linteauLine.ttc + extrasTtc,
     };
   }
 
@@ -811,6 +837,32 @@
     return `<div class="poste-specs">${parts.map(escapeHtml).join(" &nbsp;·&nbsp; ")}</div>`;
   }
 
+  function posteOuverturesHtml(poste) {
+    const ouvertures = poste.ouvertures || [];
+    const rows = ouvertures.map((o) => {
+      const oc = computePosteOpening(o);
+      return `
+        <div class="zone-item">
+          <div class="zone-info">
+            <span class="tag ${o.type === "fenetre" ? "tag-fenetre" : o.type === "porte" ? "tag-porte" : "tag-baie"}">${ITI_OPENING_LABELS[o.type]}</span>
+            ${o.largeur.toFixed(2)} × ${o.hauteur.toFixed(2)} m ${o.qty > 1 ? "× " + o.qty : ""} — déduit ${fmt(oc.surface, "m²")}${oc.linteau > 0 ? `, linteau ${fmt(oc.linteau, "ml")}` : ""}
+          </div>
+          <div class="opening-actions">
+            <button class="btn btn-ghost btn-small" data-action="edit-ouverture-iti" data-poste-id="${poste.id}" data-ouverture-id="${o.id}">Modifier</button>
+            <button class="btn btn-danger btn-small" data-action="delete-ouverture-iti" data-poste-id="${poste.id}" data-ouverture-id="${o.id}">✕</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    return `
+      <div class="zone-list">${rows}</div>
+      <div class="add-opening-row">
+        <button class="btn btn-primary btn-small" data-action="add-ouverture-iti" data-poste-id="${poste.id}">+ Déduire une ouverture</button>
+      </div>
+    `;
+  }
+
   function posteCardHtml(poste) {
     const c = computePoste(poste);
     const mesures = poste.mesures || [];
@@ -830,7 +882,8 @@
         <div class="facade-head">
           <div>
             <div class="facade-name">${escapeHtml(poste.type)}</div>
-            <div class="facade-dims">Surface : ${fmt(c.surface, "m²")} — Prix HT/m² ${fmt(poste.prix, "€")} · TVA ${poste.tva}% — HT ${fmt(c.mainHt, "€")} / TTC ${fmt(c.mainTtc, "€")}</div>
+            <div class="facade-dims">Surface nette : ${fmt(c.surface, "m²")}${c.ouvSurface > 0 ? ` (brute ${fmt(c.surfaceBrute, "m²")} − ${fmt(c.ouvSurface, "m²")} ouvertures)` : ""}${c.linteauTotal > 0 ? ` — Linteau : ${fmt(c.linteauTotal, "ml")}` : ""}</div>
+            <div class="facade-dims">Prix HT/m² ${fmt(poste.prix, "€")}${poste.prixLinteau ? ` · Prix HT/ml linteau ${fmt(poste.prixLinteau, "€")}` : ""} · TVA ${poste.tva}% — HT ${fmt(c.mainHt, "€")} / TTC ${fmt(c.mainTtc, "€")}</div>
             ${posteSpecsLine(poste)}
           </div>
           <div class="facade-actions">
@@ -844,6 +897,8 @@
         <div class="add-opening-row">
           <button class="btn btn-primary btn-small" data-action="add-mesure" data-poste-id="${poste.id}">+ Ajouter une cote</button>
         </div>
+
+        ${posteOuverturesHtml(poste)}
 
         ${posteExtrasHtml(poste)}
       </div>
@@ -1476,6 +1531,9 @@
         <label>Prix HT/m² (€)
           <input type="number" id="m-poste-prix" step="0.01" min="0" inputmode="decimal" value="${isNew ? "0" : poste.prix}">
         </label>
+        <label>Prix HT/ml linteau (€)
+          <input type="number" id="m-poste-prix-linteau" step="0.01" min="0" inputmode="decimal" value="${isNew ? "0" : (poste.prixLinteau || 0)}">
+        </label>
         <label>TVA (%)
           <input type="number" id="m-poste-tva" step="0.1" min="0" max="100" inputmode="decimal" value="${isNew ? DEFAULT_TVA : poste.tva}">
         </label>
@@ -1507,6 +1565,7 @@
       const type = document.getElementById("m-poste-type").value.trim();
       if (!type) { alert("Merci de préciser le type de travaux."); return false; }
       const prix = round2(Math.max(0, parseNum("m-poste-prix")));
+      const prixLinteau = round2(Math.max(0, parseNum("m-poste-prix-linteau")));
       const tva = round2(Math.min(100, Math.max(0, parseNum("m-poste-tva"))));
       const isolant = document.getElementById("m-poste-isolant").value;
       const isolantAutre = isolant === "autre" ? document.getElementById("m-poste-isolant-autre").value.trim() : "";
@@ -1518,10 +1577,11 @@
 
       if (isNew) {
         if (!zone.postes) zone.postes = [];
-        zone.postes.push({ id: uid(), type, prix, tva, mesures: [], extras: [], ...specs });
+        zone.postes.push({ id: uid(), type, prix, prixLinteau, tva, mesures: [], ouvertures: [], extras: [], ...specs });
       } else {
         poste.type = type;
         poste.prix = prix;
+        poste.prixLinteau = prixLinteau;
         poste.tva = tva;
         Object.assign(poste, specs);
       }
@@ -1580,6 +1640,63 @@
       renderClientView();
     });
     setTimeout(() => document.getElementById("m-mesure-loc").focus(), 50);
+  }
+
+  function ouvertureItiModal(client, poste, ouverture) {
+    const isNew = !ouverture;
+    const title = isNew ? "Nouvelle ouverture à déduire" : "Modifier l'ouverture";
+    const typeVal = isNew ? "fenetre" : ouverture.type;
+
+    const typeButtonsHtml = Object.keys(ITI_OPENING_LABELS).map((key) =>
+      `<button type="button" data-type="${key}" class="${typeVal === key ? "active" : ""}">${ITI_OPENING_LABELS[key]}</button>`
+    ).join("");
+
+    const body = `
+      <div class="type-toggle type-toggle-iti">${typeButtonsHtml}</div>
+      <p class="modal-hint">Fenêtre = linteau sur 4 côtés. Porte = 3 côtés (pas de sol). Velux = surface déduite seulement, pas de linteau (utilisez l'élément "Habillage de velux" pour le forfait).</p>
+      <div class="field-row">
+        <label>Largeur (m)
+          <input type="number" id="m-ouv-largeur" step="0.01" min="0" inputmode="decimal" value="${isNew ? "" : ouverture.largeur}">
+        </label>
+        <label>Hauteur (m)
+          <input type="number" id="m-ouv-hauteur" step="0.01" min="0" inputmode="decimal" value="${isNew ? "" : ouverture.hauteur}">
+        </label>
+        <label>Quantité
+          <input type="number" id="m-ouv-qty" step="1" min="1" value="${isNew ? "1" : ouverture.qty}">
+        </label>
+      </div>
+    `;
+    let currentType = typeVal;
+    openModal(title, body, () => {
+      const largeur = parseNum("m-ouv-largeur");
+      const hauteur = parseNum("m-ouv-hauteur");
+      const qty = Math.max(1, Math.round(parseNum("m-ouv-qty") || 1));
+      if (largeur <= 0 || hauteur <= 0) { alert("Merci de renseigner largeur et hauteur."); return false; }
+
+      if (isNew) {
+        if (!poste.ouvertures) poste.ouvertures = [];
+        poste.ouvertures.push({ id: uid(), type: currentType, largeur, hauteur, qty });
+      } else {
+        ouverture.type = currentType;
+        ouverture.largeur = largeur;
+        ouverture.hauteur = hauteur;
+        ouverture.qty = qty;
+      }
+      client.updatedAt = Date.now();
+      Store.upsertClient(client);
+      renderClientView();
+    });
+
+    const typeBtns = Array.from(document.querySelectorAll(".type-toggle-iti button"));
+    typeBtns.forEach((b) => {
+      b.addEventListener("click", () => {
+        currentType = b.dataset.type;
+        typeBtns.forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+      });
+    });
+
+    setTimeout(() => document.getElementById("m-ouv-largeur").focus(), 50);
   }
 
   function posteExtraModal(client, poste, extra) {
@@ -1711,6 +1828,23 @@
       const found = findPosteIti(client, btn.dataset.posteId);
       if (found) {
         found.poste.mesures = (found.poste.mesures || []).filter((m) => m.id !== btn.dataset.mesureId);
+        client.updatedAt = Date.now();
+        Store.upsertClient(client);
+        renderClientView();
+      }
+    } else if (action === "add-ouverture-iti") {
+      const found = findPosteIti(client, btn.dataset.posteId);
+      if (found) ouvertureItiModal(client, found.poste, null);
+    } else if (action === "edit-ouverture-iti") {
+      const found = findPosteIti(client, btn.dataset.posteId);
+      if (found) {
+        const ouverture = (found.poste.ouvertures || []).find((o) => o.id === btn.dataset.ouvertureId);
+        ouvertureItiModal(client, found.poste, ouverture);
+      }
+    } else if (action === "delete-ouverture-iti") {
+      const found = findPosteIti(client, btn.dataset.posteId);
+      if (found) {
+        found.poste.ouvertures = (found.poste.ouvertures || []).filter((o) => o.id !== btn.dataset.ouvertureId);
         client.updatedAt = Date.now();
         Store.upsertClient(client);
         renderClientView();
@@ -2271,6 +2405,11 @@
           return `<tr><td>${escapeHtml(m.localisation)}</td><td>${m.largeur.toFixed(2)} × ${m.hauteur.toFixed(2)} m ${m.qty > 1 ? "× " + m.qty : ""}</td><td>${fmt(computeMesureArea(m), "m²")}</td><td>${photos ? `<div class="print-photos">${photos}</div>` : "-"}</td></tr>`;
         }).join("");
 
+        const ouverturesRows = (poste.ouvertures || []).map((o) => {
+          const oc = computePosteOpening(o);
+          return `<tr><td>${ITI_OPENING_LABELS[o.type]}</td><td>${o.largeur.toFixed(2)} × ${o.hauteur.toFixed(2)} m ${o.qty > 1 ? "× " + o.qty : ""}</td><td>${fmt(oc.surface, "m²")}</td><td>${oc.linteau > 0 ? fmt(oc.linteau, "ml") : "-"}</td></tr>`;
+        }).join("");
+
         const extrasRows = (poste.extras || []).map((ex) => {
           const line = htTtc((ex.qty || 0) * (ex.prix || 0), ex.tva);
           return `<tr><td>${escapeHtml(ex.label)}${ex.taille ? ` (${escapeHtml(ex.taille)})` : ""}</td><td>${ex.qty} ${escapeHtml(ex.unit)}</td><td>${fmt(ex.prix, "€")}</td><td>${fmt(line.ht, "€")}</td><td>${fmt(line.ttc, "€")}</td></tr>`;
@@ -2281,7 +2420,8 @@
             <h3>${escapeHtml(poste.type)}</h3>
             ${specsParts.length ? `<p>${specsParts.map(escapeHtml).join(" · ")}</p>` : ""}
             ${mesuresRows ? `<table class="print-table"><thead><tr><th>Localisation</th><th>Dimensions</th><th>Surface</th><th>Photo</th></tr></thead><tbody>${mesuresRows}</tbody></table>` : ""}
-            <p>Surface totale : ${fmt(c.surface, "m²")} — Prix HT/m² ${fmt(poste.prix, "€")} (TVA ${poste.tva}%) — Sous-total HT ${fmt(c.mainHt, "€")} / TTC ${fmt(c.mainTtc, "€")}</p>
+            ${ouverturesRows ? `<table class="print-table"><thead><tr><th>Ouverture déduite</th><th>Dimensions</th><th>Surface déduite</th><th>Linteau</th></tr></thead><tbody>${ouverturesRows}</tbody></table>` : ""}
+            <p>Surface nette : ${fmt(c.surface, "m²")}${c.ouvSurface > 0 ? ` (brute ${fmt(c.surfaceBrute, "m²")})` : ""} — Prix HT/m² ${fmt(poste.prix, "€")}${c.linteauTotal > 0 ? ` · Linteau ${fmt(c.linteauTotal, "ml")} à ${fmt(poste.prixLinteau || 0, "€")}/ml` : ""} (TVA ${poste.tva}%) — Sous-total HT ${fmt(c.mainHt, "€")} / TTC ${fmt(c.mainTtc, "€")}</p>
             ${extrasRows ? `<table class="print-table"><thead><tr><th>Élément complémentaire</th><th>Qté</th><th>Prix HT</th><th>Total HT</th><th>Total TTC</th></tr></thead><tbody>${extrasRows}</tbody></table>` : ""}
           </div>
         `;
