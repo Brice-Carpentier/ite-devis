@@ -14,6 +14,36 @@
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   }
 
+  // ---------- Photos (façades et côtes ITI) ----------
+  // Les photos sont redimensionnées côté client avant stockage pour rester raisonnable
+  // en taille (le stockage local du navigateur a une capacité limitée).
+
+  function resizeImageFile(file, maxDim, quality) {
+    maxDim = maxDim || 1280;
+    quality = quality || 0.72;
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(reader.error);
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error("Image illisible"));
+        img.onload = () => {
+          const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+          const w = Math.round(img.width * scale);
+          const h = Math.round(img.height * scale);
+          const canvas = document.createElement("canvas");
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
   // ---------- Systèmes ITE (isolant + finition) ----------
 
   const ISOLANT_LABELS = {
@@ -462,6 +492,13 @@
   const modalCancel = document.getElementById("modal-cancel");
   const modalSave = document.getElementById("modal-save");
 
+  const photoInputEl = document.getElementById("photo-input");
+  const photoLightboxEl = document.getElementById("photo-lightbox");
+  const photoLightboxImgEl = document.getElementById("photo-lightbox-img");
+  const photoLightboxCloseEl = document.getElementById("photo-lightbox-close");
+  const photoLightboxDeleteEl = document.getElementById("photo-lightbox-delete");
+  const printAreaEl = document.getElementById("print-area");
+
   // ---------- Navigation ----------
 
   function showClientsView() {
@@ -686,6 +723,8 @@
           <button class="btn btn-ghost btn-small" data-action="open-sketch" data-facade-id="${f.id}">✏️ ${f.sketch ? "Modifier le croquis" : "Dessiner un croquis"}</button>
         </div>
 
+        ${photoGalleryHtml(f.photos, `data-facade-id="${f.id}"`)}
+
         ${facadeZonesHtml(f)}
 
         ${dimsSet ? `
@@ -782,6 +821,7 @@
           <button class="btn btn-ghost btn-small" data-action="edit-mesure" data-poste-id="${poste.id}" data-mesure-id="${m.id}">Modifier</button>
           <button class="btn btn-danger btn-small" data-action="delete-mesure" data-poste-id="${poste.id}" data-mesure-id="${m.id}">✕</button>
         </div>
+        ${photoGalleryHtml(m.photos, `data-poste-id="${poste.id}" data-mesure-id="${m.id}"`, true)}
       </div>
     `).join("");
 
@@ -1009,6 +1049,74 @@
     return isNaN(v) ? 0 : v;
   }
 
+  // ---------- Galerie photo (façades et côtes ITI) ----------
+
+  function photoGalleryHtml(photos, dataAttrs, small) {
+    const thumbClass = small ? "photo-thumb photo-thumb-sm" : "photo-thumb";
+    const addClass = small ? "photo-thumb-add photo-thumb-sm" : "photo-thumb-add";
+    const thumbs = (photos || []).map((p) =>
+      `<img class="${thumbClass}" data-action="view-photo" ${dataAttrs} data-photo-id="${p.id}" src="${p.dataUrl}" alt="Photo">`
+    ).join("");
+    return `
+      <div class="photo-gallery">
+        ${thumbs}
+        <button type="button" class="${addClass}" data-action="add-photo" ${dataAttrs}>📷</button>
+      </div>
+    `;
+  }
+
+  let photoTarget = null; // { getPhotos, onSaved }
+  let lightboxContext = null; // { getPhotos, photoId, onSaved }
+
+  function openPhotoPicker(target) {
+    photoTarget = target;
+    photoInputEl.value = "";
+    photoInputEl.click();
+  }
+
+  photoInputEl.addEventListener("change", async () => {
+    if (!photoTarget || !photoInputEl.files.length) return;
+    const files = Array.from(photoInputEl.files);
+    const photos = photoTarget.getPhotos();
+    const onSaved = photoTarget.onSaved;
+    for (const file of files) {
+      try {
+        const dataUrl = await resizeImageFile(file);
+        photos.push({ id: uid(), dataUrl });
+      } catch (err) {
+        console.error("Erreur de traitement de la photo", err);
+      }
+    }
+    onSaved();
+  });
+
+  function openLightbox(getPhotos, photoId, onSaved) {
+    const photos = getPhotos();
+    const photo = photos.find((p) => p.id === photoId);
+    if (!photo) return;
+    lightboxContext = { getPhotos, photoId, onSaved };
+    photoLightboxImgEl.src = photo.dataUrl;
+    photoLightboxEl.hidden = false;
+  }
+
+  function closeLightbox() {
+    photoLightboxEl.hidden = true;
+    lightboxContext = null;
+  }
+
+  photoLightboxCloseEl.addEventListener("click", closeLightbox);
+
+  photoLightboxDeleteEl.addEventListener("click", () => {
+    if (!lightboxContext) return;
+    if (!confirm("Supprimer cette photo ?")) return;
+    const photos = lightboxContext.getPhotos();
+    const idx = photos.findIndex((p) => p.id === lightboxContext.photoId);
+    if (idx >= 0) photos.splice(idx, 1);
+    const onSaved = lightboxContext.onSaved;
+    closeLightbox();
+    onSaved();
+  });
+
   // ---------- Actions: façade ----------
 
   function facadeModal(client, facade) {
@@ -1047,7 +1155,7 @@
       const systeme = { isolant, finition, bardageType };
 
       if (isNew) {
-        client.facades.push({ id: uid(), nom, largeur: 0, hauteur: 0, ouvertures: [], systeme, extras: {} });
+        client.facades.push({ id: uid(), nom, largeur: 0, hauteur: 0, ouvertures: [], systeme, extras: {}, photos: [] });
       } else {
         facade.nom = nom;
         facade.systeme = systeme;
@@ -1184,6 +1292,17 @@
       renderClientView();
     } else if (action === "open-sketch") {
       openSketchEditor(client, facade);
+    } else if (action === "add-photo") {
+      openPhotoPicker({
+        getPhotos: () => { if (!facade.photos) facade.photos = []; return facade.photos; },
+        onSaved: () => { client.updatedAt = Date.now(); Store.upsertClient(client); renderClientView(); },
+      });
+    } else if (action === "view-photo") {
+      openLightbox(
+        () => { if (!facade.photos) facade.photos = []; return facade.photos; },
+        btn.dataset.photoId,
+        () => { client.updatedAt = Date.now(); Store.upsertClient(client); renderClientView(); }
+      );
     } else if (action === "toggle-extras") {
       if (expandedFacadeExtras.has(facadeId)) expandedFacadeExtras.delete(facadeId);
       else expandedFacadeExtras.add(facadeId);
@@ -1448,7 +1567,7 @@
 
       if (isNew) {
         if (!poste.mesures) poste.mesures = [];
-        poste.mesures.push({ id: uid(), localisation, largeur, hauteur, qty });
+        poste.mesures.push({ id: uid(), localisation, largeur, hauteur, qty, photos: [] });
       } else {
         mesure.localisation = localisation;
         mesure.largeur = largeur;
@@ -1595,6 +1714,29 @@
         client.updatedAt = Date.now();
         Store.upsertClient(client);
         renderClientView();
+      }
+    } else if (action === "add-photo") {
+      const found = findPosteIti(client, btn.dataset.posteId);
+      if (found) {
+        const mesure = (found.poste.mesures || []).find((m) => m.id === btn.dataset.mesureId);
+        if (mesure) {
+          openPhotoPicker({
+            getPhotos: () => { if (!mesure.photos) mesure.photos = []; return mesure.photos; },
+            onSaved: () => { client.updatedAt = Date.now(); Store.upsertClient(client); renderClientView(); },
+          });
+        }
+      }
+    } else if (action === "view-photo") {
+      const found = findPosteIti(client, btn.dataset.posteId);
+      if (found) {
+        const mesure = (found.poste.mesures || []).find((m) => m.id === btn.dataset.mesureId);
+        if (mesure) {
+          openLightbox(
+            () => { if (!mesure.photos) mesure.photos = []; return mesure.photos; },
+            btn.dataset.photoId,
+            () => { client.updatedAt = Date.now(); Store.upsertClient(client); renderClientView(); }
+          );
+        }
       }
     } else if (action === "toggle-poste-extras") {
       const posteId = btn.dataset.posteId;
@@ -2013,6 +2155,168 @@
 
   window.addEventListener("resize", () => {
     if (!sketchOverlay.hidden) sketchResizeCanvas();
+  });
+
+  // ---------- Récapitulatif imprimable (PDF via impression du navigateur) ----------
+
+  function printHeaderHtml(client, title) {
+    return `
+      <div class="print-header">
+        <div>
+          <h1>${escapeHtml(title)}</h1>
+          <div class="print-client-info">
+            <strong>${escapeHtml(client.nom || "Client")}</strong><br>
+            ${client.adresse ? escapeHtml(client.adresse) + "<br>" : ""}
+            ${client.telephone ? "Tél : " + escapeHtml(client.telephone) + "<br>" : ""}
+            ${client.dateRdv ? "Date du RDV : " + formatDate(client.dateRdv) : ""}
+          </div>
+        </div>
+        <img src="icons/icon-512.png" alt="Logo">
+      </div>
+      ${client.notes ? `<p><em>${escapeHtml(client.notes)}</em></p>` : ""}
+    `;
+  }
+
+  function buildIteReportHtml(client) {
+    const t = computeClientTotals(client);
+    const m2 = getPrixEntry(client, "m2");
+    const tab = getPrixEntry(client, "tableau");
+    const app = getPrixEntry(client, "appui");
+    const lineM2 = htTtc(t.nette * m2.prix, m2.tva);
+    const lineTab = htTtc(t.tableau * tab.prix, tab.tva);
+    const lineApp = htTtc(t.appui * app.prix, app.tva);
+    const iteTotals = computeIteTotals(client);
+    const extrasTotals = computeClientExtrasTotals(client);
+    const grandHt = iteTotals.ht + extrasTotals.ht;
+    const grandTtc = iteTotals.ttc + extrasTotals.ttc;
+
+    const facadesHtml = client.facades.map((f) => {
+      const c = computeFacade(f);
+
+      const openingsRows = f.ouvertures.map((o) => {
+        const oc = computeOpening(o);
+        const typeInfo = OPENING_TYPES[o.type];
+        return `<tr>
+          <td>${typeInfo.label}</td>
+          <td>${o.largeur.toFixed(2)} × ${o.hauteur.toFixed(2)} m ${o.qty > 1 ? "× " + o.qty : ""}</td>
+          <td>${fmt(oc.surface, "m²")}</td>
+          <td>${fmt(oc.tableau, "ml")}</td>
+          <td>${typeInfo.hasAppui ? fmt(oc.appui, "ml") : "-"}</td>
+        </tr>`;
+      }).join("");
+
+      const extrasRows = EXTRAS_CATALOG.map((item) => {
+        const e = getExtraEntry(f, item.key);
+        if (!e.qty) return "";
+        const line = htTtc(e.qty * e.prix, e.tva);
+        return `<tr><td>${escapeHtml(item.label)}</td><td>${e.qty} ${item.unit}</td><td>${fmt(e.prix, "€")}</td><td>${fmt(line.ht, "€")}</td><td>${fmt(line.ttc, "€")}</td></tr>`;
+      }).join("");
+
+      const autreZonesRows = (f.zones || []).filter((z) => z.kind === "autre").map((z) => {
+        const a = zoneArea(z);
+        const line = htTtc(a * (z.prix || 0), z.tva);
+        return `<tr><td>${escapeHtml(z.label)}</td><td>${fmt(a, "m²")}</td><td>${fmt(z.prix, "€")}</td><td>${fmt(line.ht, "€")}</td><td>${fmt(line.ttc, "€")}</td></tr>`;
+      }).join("");
+
+      const photosHtml = (f.photos || []).map((p) => `<img src="${p.dataUrl}">`).join("");
+
+      return `
+        <div class="print-section">
+          <h3>${escapeHtml(f.nom)} <span class="print-badge">${escapeHtml(systemeLabel(f.systeme))}</span></h3>
+          <p>Surface brute : ${fmt(c.brute, "m²")} — Surface nette à isoler : ${fmt(c.nette, "m²")} — Tableaux : ${fmt(c.tableau, "ml")} — Appuis : ${fmt(c.appui, "ml")}</p>
+          ${photosHtml ? `<div class="print-photos">${photosHtml}</div>` : ""}
+          ${openingsRows ? `<table class="print-table"><thead><tr><th>Ouverture</th><th>Dimensions</th><th>Surface</th><th>Tableau</th><th>Appui</th></tr></thead><tbody>${openingsRows}</tbody></table>` : ""}
+          ${(extrasRows || autreZonesRows) ? `<table class="print-table"><thead><tr><th>Élément complémentaire</th><th>Qté</th><th>Prix HT</th><th>Total HT</th><th>Total TTC</th></tr></thead><tbody>${extrasRows}${autreZonesRows}</tbody></table>` : ""}
+        </div>
+      `;
+    }).join("");
+
+    return `
+      ${printHeaderHtml(client, "Récapitulatif Extérieur (ITE)")}
+      ${facadesHtml || "<p>Aucune façade renseignée.</p>"}
+      <h2>Totaux extérieur</h2>
+      <table class="print-table">
+        <thead><tr><th></th><th>Quantité</th><th>Prix HT</th><th>TVA</th><th>Total HT</th><th>Total TTC</th></tr></thead>
+        <tbody>
+          <tr><td>Surface nette</td><td>${fmt(t.nette, "m²")}</td><td>${fmt(m2.prix, "€")}</td><td>${m2.tva}%</td><td>${fmt(lineM2.ht, "€")}</td><td>${fmt(lineM2.ttc, "€")}</td></tr>
+          <tr><td>Tableaux</td><td>${fmt(t.tableau, "ml")}</td><td>${fmt(tab.prix, "€")}</td><td>${tab.tva}%</td><td>${fmt(lineTab.ht, "€")}</td><td>${fmt(lineTab.ttc, "€")}</td></tr>
+          <tr><td>Appuis</td><td>${fmt(t.appui, "ml")}</td><td>${fmt(app.prix, "€")}</td><td>${app.tva}%</td><td>${fmt(lineApp.ht, "€")}</td><td>${fmt(lineApp.ttc, "€")}</td></tr>
+        </tbody>
+      </table>
+      <div class="print-total-row"><span>Total éléments complémentaires</span><span>HT ${fmt(extrasTotals.ht, "€")} / TTC ${fmt(extrasTotals.ttc, "€")}</span></div>
+      <div class="print-grand-total">Total Extérieur : ${fmt(grandHt, "€")} HT — ${fmt(grandTtc, "€")} TTC</div>
+    `;
+  }
+
+  function buildItiReportHtml(client) {
+    const iti = getClientIti(client);
+
+    const zonesHtml = iti.zones.map((zone) => {
+      const zc = computeZoneIti(zone);
+      const postesHtml = (zone.postes || []).map((poste) => {
+        const c = computePoste(poste);
+        const isolantLabel = poste.isolant ? (poste.isolant === "autre" ? (poste.isolantAutre || "Autre") : ISOLANT_ITI_LABELS[poste.isolant]) : "";
+        const specsParts = [];
+        if (isolantLabel) specsParts.push(`Isolant : ${isolantLabel}${poste.epaisseur ? ` (${poste.epaisseur})` : ""}`);
+        if (poste.support) specsParts.push(`Support : ${poste.support}`);
+        if (poste.parement) specsParts.push(`Parement : ${poste.parement}`);
+        if (poste.fixation) specsParts.push(`Fixation : ${poste.fixation}`);
+
+        const mesuresRows = (poste.mesures || []).map((m) => {
+          const photos = (m.photos || []).map((p) => `<img src="${p.dataUrl}">`).join("");
+          return `<tr><td>${escapeHtml(m.localisation)}</td><td>${m.largeur.toFixed(2)} × ${m.hauteur.toFixed(2)} m ${m.qty > 1 ? "× " + m.qty : ""}</td><td>${fmt(computeMesureArea(m), "m²")}</td><td>${photos ? `<div class="print-photos">${photos}</div>` : "-"}</td></tr>`;
+        }).join("");
+
+        const extrasRows = (poste.extras || []).map((ex) => {
+          const line = htTtc((ex.qty || 0) * (ex.prix || 0), ex.tva);
+          return `<tr><td>${escapeHtml(ex.label)}${ex.taille ? ` (${escapeHtml(ex.taille)})` : ""}</td><td>${ex.qty} ${escapeHtml(ex.unit)}</td><td>${fmt(ex.prix, "€")}</td><td>${fmt(line.ht, "€")}</td><td>${fmt(line.ttc, "€")}</td></tr>`;
+        }).join("");
+
+        return `
+          <div class="print-section">
+            <h3>${escapeHtml(poste.type)}</h3>
+            ${specsParts.length ? `<p>${specsParts.map(escapeHtml).join(" · ")}</p>` : ""}
+            ${mesuresRows ? `<table class="print-table"><thead><tr><th>Localisation</th><th>Dimensions</th><th>Surface</th><th>Photo</th></tr></thead><tbody>${mesuresRows}</tbody></table>` : ""}
+            <p>Surface totale : ${fmt(c.surface, "m²")} — Prix HT/m² ${fmt(poste.prix, "€")} (TVA ${poste.tva}%) — Sous-total HT ${fmt(c.mainHt, "€")} / TTC ${fmt(c.mainTtc, "€")}</p>
+            ${extrasRows ? `<table class="print-table"><thead><tr><th>Élément complémentaire</th><th>Qté</th><th>Prix HT</th><th>Total HT</th><th>Total TTC</th></tr></thead><tbody>${extrasRows}</tbody></table>` : ""}
+          </div>
+        `;
+      }).join("");
+
+      return `
+        <h2>Zone : ${escapeHtml(zone.nom)}</h2>
+        ${postesHtml || "<p>Aucun poste de travaux.</p>"}
+        <div class="print-total-row"><span>Total zone ${escapeHtml(zone.nom)}</span><span>HT ${fmt(zc.ht, "€")} / TTC ${fmt(zc.ttc, "€")}</span></div>
+      `;
+    }).join("");
+
+    const workTotals = computeItiWorkTotals(client);
+    const extrasTotals = computeItiExtrasTotals(client);
+    const grandHt = workTotals.ht + extrasTotals.ht;
+    const grandTtc = workTotals.ttc + extrasTotals.ttc;
+
+    return `
+      ${printHeaderHtml(client, "Récapitulatif Intérieur (ITI)")}
+      ${zonesHtml || "<p>Aucune zone renseignée.</p>"}
+      <div class="print-grand-total">Total Intérieur : ${fmt(grandHt, "€")} HT — ${fmt(grandTtc, "€")} TTC</div>
+    `;
+  }
+
+  function printReport(bodyHtml) {
+    printAreaEl.innerHTML = `<div class="print-doc">${bodyHtml}</div>`;
+    window.print();
+  }
+
+  document.getElementById("btn-print-ite").addEventListener("click", () => {
+    const client = Store.getClient(currentClientId);
+    if (!client) return;
+    printReport(buildIteReportHtml(client));
+  });
+
+  document.getElementById("btn-print-iti").addEventListener("click", () => {
+    const client = Store.getClient(currentClientId);
+    if (!client) return;
+    printReport(buildItiReportHtml(client));
   });
 
   // ---------- PWA : service worker (fonctionnement hors ligne) ----------

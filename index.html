@@ -136,6 +136,9 @@
         <span>Total éléments complémentaires (extérieur) seul</span>
         <span>HT <strong id="total-extras-ht">0,00 €</strong> &nbsp;/&nbsp; TTC <strong id="total-extras-ttc">0,00 €</strong></span>
       </div>
+      <div class="print-row">
+        <button id="btn-print-ite" class="btn btn-primary btn-lg">🖨️ Récap PDF Extérieur</button>
+      </div>
     </div>
     </div>
 
@@ -157,6 +160,9 @@
         <div class="subtotal-summary-row">
           <span>Total éléments complémentaires (intérieur) seul</span>
           <span>HT <strong id="total-iti-extras-ht">0,00 €</strong> &nbsp;/&nbsp; TTC <strong id="total-iti-extras-ttc">0,00 €</strong></span>
+        </div>
+        <div class="print-row">
+          <button id="btn-print-iti" class="btn btn-primary btn-lg">🖨️ Récap PDF Intérieur</button>
         </div>
       </div>
     </div>
@@ -228,6 +234,23 @@
     <canvas id="sketch-canvas"></canvas>
   </div>
 </div>
+
+<!-- Input caché réutilisé pour toutes les prises de photo (façade ou côte ITI) -->
+<input type="file" id="photo-input" accept="image/*" capture="environment" multiple hidden>
+
+<!-- ===== VISIONNEUSE PHOTO PLEIN ECRAN ===== -->
+<div id="photo-lightbox" class="photo-lightbox" hidden>
+  <div class="photo-lightbox-toolbar">
+    <button id="photo-lightbox-close" class="btn btn-ghost">← Fermer</button>
+    <button id="photo-lightbox-delete" class="btn btn-danger">Supprimer cette photo</button>
+  </div>
+  <div class="photo-lightbox-body">
+    <img id="photo-lightbox-img" alt="Photo">
+  </div>
+</div>
+
+<!-- ===== ZONE D'IMPRESSION (récap PDF) ===== -->
+<div id="print-area"></div>
 
 <script src="app.js"></script>
 </body>
