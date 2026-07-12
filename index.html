@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>ITE Devis - Fiches Chantier</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1d6fd6">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ITE Devis">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ===== ECRAN LISTE CLIENTS ===== -->
+  <section id="view-clients" class="view">
+    <header class="topbar">
+      <h1>Mes Chantiers ITE</h1>
+      <button id="btn-new-client" class="btn btn-primary btn-lg">+ Nouveau client</button>
+    </header>
+
+    <div class="search-row">
+      <input type="text" id="client-search" placeholder="Rechercher un client...">
+    </div>
+
+    <div id="client-list" class="client-list"></div>
+    <p id="empty-clients" class="empty-msg" hidden>Aucune fiche client. Créez la première avec "+ Nouveau client".</p>
+  </section>
+
+  <!-- ===== ECRAN FICHE CLIENT ===== -->
+  <section id="view-client" class="view" hidden>
+    <header class="topbar">
+      <button id="btn-back-clients" class="btn btn-ghost">← Clients</button>
+      <h1 id="client-title">Fiche client</h1>
+      <button id="btn-delete-client" class="btn btn-danger">Supprimer</button>
+    </header>
+
+    <div class="client-form card">
+      <div class="form-grid">
+        <label>Nom du client
+          <input type="text" id="f-nom" placeholder="Nom Prénom">
+        </label>
+        <label>Téléphone
+          <input type="tel" id="f-tel" placeholder="06 00 00 00 00">
+        </label>
+        <label>Adresse du chantier
+          <input type="text" id="f-adresse" placeholder="Adresse">
+        </label>
+        <label>Date du rendez-vous
+          <input type="date" id="f-date">
+        </label>
+      </div>
+      <label class="notes-label">Notes
+        <textarea id="f-notes" rows="2" placeholder="Remarques, contraintes d'accès, isolant choisi..."></textarea>
+      </label>
+    </div>
+
+    <div class="section-header">
+      <h2>Façades</h2>
+      <button id="btn-add-facade" class="btn btn-primary btn-lg">+ Ajouter une façade</button>
+    </div>
+
+    <div id="facade-list"></div>
+    <p id="empty-facades" class="empty-msg" hidden>Aucune façade. Ajoutez la première façade du chantier.</p>
+
+    <div class="totals-bar card">
+      <h2>Total chantier</h2>
+      <div class="totals-grid">
+        <div class="total-box">
+          <span class="total-label">Surface nette à isoler</span>
+          <span class="total-value" id="tot-surface">0,00 m²</span>
+          <div class="total-price-row">
+            <label>Prix HT/m² (€)
+              <input type="number" id="price-m2" class="total-price-input" step="0.01" min="0" inputmode="decimal">
+            </label>
+            <label>TVA (%)
+              <input type="number" id="tva-m2" class="total-tva-input" step="0.1" min="0" max="100" inputmode="decimal">
+            </label>
+          </div>
+          <div class="total-subtotal-row">
+            <span>HT <strong id="subtotal-m2-ht">0,00 €</strong></span>
+            <span>TTC <strong id="subtotal-m2-ttc">0,00 €</strong></span>
+          </div>
+        </div>
+        <div class="total-box">
+          <span class="total-label">Linéaire de tableaux</span>
+          <span class="total-value" id="tot-tableaux">0,00 ml</span>
+          <div class="total-price-row">
+            <label>Prix HT/ml (€)
+              <input type="number" id="price-tableau" class="total-price-input" step="0.01" min="0" inputmode="decimal">
+            </label>
+            <label>TVA (%)
+              <input type="number" id="tva-tableau" class="total-tva-input" step="0.1" min="0" max="100" inputmode="decimal">
+            </label>
+          </div>
+          <div class="total-subtotal-row">
+            <span>HT <strong id="subtotal-tableau-ht">0,00 €</strong></span>
+            <span>TTC <strong id="subtotal-tableau-ttc">0,00 €</strong></span>
+          </div>
+        </div>
+        <div class="total-box">
+          <span class="total-label">Linéaire d'appuis</span>
+          <span class="total-value" id="tot-appuis">0,00 ml</span>
+          <div class="total-price-row">
+            <label>Prix HT/ml (€)
+              <input type="number" id="price-appui" class="total-price-input" step="0.01" min="0" inputmode="decimal">
+            </label>
+            <label>TVA (%)
+              <input type="number" id="tva-appui" class="total-tva-input" step="0.1" min="0" max="100" inputmode="decimal">
+            </label>
+          </div>
+          <div class="total-subtotal-row">
+            <span>HT <strong id="subtotal-appui-ht">0,00 €</strong></span>
+            <span>TTC <strong id="subtotal-appui-ttc">0,00 €</strong></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="subtotal-summary-row">
+        <span>Total ITE seul</span>
+        <span>HT <strong id="total-ite-ht">0,00 €</strong> &nbsp;/&nbsp; TTC <strong id="total-ite-ttc">0,00 €</strong></span>
+      </div>
+      <div class="subtotal-summary-row">
+        <span>Total éléments complémentaires seul</span>
+        <span>HT <strong id="total-extras-ht">0,00 €</strong> &nbsp;/&nbsp; TTC <strong id="total-extras-ttc">0,00 €</strong></span>
+      </div>
+
+      <div class="grand-total-row">
+        <div class="grand-total-block">
+          <span>Total global HT</span>
+          <span id="grand-total-ht">0,00 €</span>
+        </div>
+        <div class="grand-total-block">
+          <span>Total global TTC</span>
+          <span id="grand-total-ttc">0,00 €</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<!-- ===== MODALE FACADE / OUVERTURE ===== -->
+<div id="modal-overlay" class="modal-overlay" hidden>
+  <div class="modal card">
+    <h2 id="modal-title">Façade</h2>
+    <div id="modal-body"></div>
+    <div class="modal-actions">
+      <button id="modal-cancel" class="btn btn-ghost">Annuler</button>
+      <button id="modal-save" class="btn btn-primary">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== PLEIN ECRAN CROQUIS FACADE ===== -->
+<div id="sketch-overlay" class="sketch-overlay" hidden>
+  <div class="sketch-toolbar">
+    <button id="sketch-close" class="btn btn-ghost">← Fermer</button>
+    <div class="sketch-tools">
+      <div class="mode-toggle">
+        <button id="mode-line" type="button" class="active">📏 Ligne droite</button>
+        <button id="mode-freehand" type="button">✏️ Trait libre</button>
+        <button id="mode-rectangle" type="button">▭ Rectangle</button>
+        <button id="mode-triangle" type="button">🔺 Triangle</button>
+        <button id="mode-fenetre" type="button">🪟 Fenêtre</button>
+        <button id="mode-porte" type="button">🚪 Porte</button>
+        <button id="mode-texte" type="button">🔤 Texte</button>
+      </div>
+      <button type="button" class="sketch-color active" data-color="#1b2430" style="background:#1b2430"></button>
+      <button type="button" class="sketch-color" data-color="#d63b3b" style="background:#d63b3b"></button>
+      <button type="button" class="sketch-color" data-color="#1d6fd6" style="background:#1d6fd6"></button>
+      <button type="button" class="sketch-color" data-color="#1f9d5a" style="background:#1f9d5a"></button>
+      <button id="sketch-eraser" type="button" class="btn btn-ghost btn-small">Gomme</button>
+      <button id="sketch-undo" type="button" class="btn btn-ghost btn-small">↩ Annuler</button>
+      <button id="sketch-clear" type="button" class="btn btn-ghost btn-small">Tout effacer</button>
+    </div>
+    <button id="sketch-save" class="btn btn-primary">Enregistrer</button>
+  </div>
+  <div class="sketch-canvas-wrap">
+    <canvas id="sketch-canvas"></canvas>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
