@@ -2218,13 +2218,17 @@
         return `<tr><td>${escapeHtml(z.label)}</td><td>${fmt(a, "m²")}</td><td>${fmt(z.prix, "€")}</td><td>${fmt(line.ht, "€")}</td><td>${fmt(line.ttc, "€")}</td></tr>`;
       }).join("");
 
+      const sketchHtml = f.sketch ? `<img src="${f.sketch}">` : "";
       const photosHtml = (f.photos || []).map((p) => `<img src="${p.dataUrl}">`).join("");
 
       return `
         <div class="print-section">
           <h3>${escapeHtml(f.nom)} <span class="print-badge">${escapeHtml(systemeLabel(f.systeme))}</span></h3>
           <p>Surface brute : ${fmt(c.brute, "m²")} — Surface nette à isoler : ${fmt(c.nette, "m²")} — Tableaux : ${fmt(c.tableau, "ml")} — Appuis : ${fmt(c.appui, "ml")}</p>
-          ${photosHtml ? `<div class="print-photos">${photosHtml}</div>` : ""}
+          ${(sketchHtml || photosHtml) ? `<div class="print-photos">
+            ${sketchHtml ? `<div class="print-photo-block"><span class="print-photo-label">Croquis</span>${sketchHtml}</div>` : ""}
+            ${photosHtml ? `<div class="print-photo-block"><span class="print-photo-label">Photos</span><div class="print-photos-inline">${photosHtml}</div></div>` : ""}
+          </div>` : ""}
           ${openingsRows ? `<table class="print-table"><thead><tr><th>Ouverture</th><th>Dimensions</th><th>Surface</th><th>Tableau</th><th>Appui</th></tr></thead><tbody>${openingsRows}</tbody></table>` : ""}
           ${(extrasRows || autreZonesRows) ? `<table class="print-table"><thead><tr><th>Élément complémentaire</th><th>Qté</th><th>Prix HT</th><th>Total HT</th><th>Total TTC</th></tr></thead><tbody>${extrasRows}${autreZonesRows}</tbody></table>` : ""}
         </div>
