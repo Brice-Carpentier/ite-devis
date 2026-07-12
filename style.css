@@ -211,6 +211,12 @@ label {
 
 .apply-all-row { margin-top: 10px; }
 
+.poste-specs {
+  margin-top: 6px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
 .facade-actions { display: flex; gap: 8px; }
 
 .facade-metrics {

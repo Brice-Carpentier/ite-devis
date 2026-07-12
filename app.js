@@ -160,14 +160,36 @@
   }
 
   // ---------- Intérieur (ITI) : zones -> postes de travaux -> cotes + éléments complémentaires ----------
+  // Suggestions de types de postes : voir la <datalist id="iti-poste-suggestions"> dans index.html.
 
-  const ITI_POSTE_SUGGESTIONS = [
-    "Isolation des rampants",
-    "Isolation des murs",
-    "Isolation des combles perdus",
-    "Isolation des combles aménageables",
-    "Isolation des planchers bas",
-    "Plâterie / Cloisons",
+  const ISOLANT_ITI_LABELS = {
+    laine_verre: "Laine de Verre",
+    laine_roche: "Laine de roche",
+    laine_bois: "Laine de bois",
+    autre: "Autre",
+  };
+
+  // Catalogue de suggestions pour les éléments complémentaires d'un poste ITI.
+  // "hasTaille" : l'élément nécessite de préciser une taille (ex: dimension de porte/trappe).
+  const ITI_EXTRAS_CATALOG = [
+    { key: "demolition", label: "Démolition", unit: "m²" },
+    { key: "enlevement", label: "Enlèvement", unit: "m²" },
+    { key: "membrane", label: "Membrane", unit: "m²" },
+    { key: "velux", label: "Velux", unit: "unité" },
+    { key: "lucarne", label: "Lucarne", unit: "unité" },
+    { key: "placo_hydro", label: "Placo Hydro", unit: "m²" },
+    { key: "wc_suspendus", label: "WC Suspendus", unit: "unité" },
+    { key: "coffrage_coupe_feu", label: "Coffrage Coupe Feu", unit: "unité" },
+    { key: "chemin_acces_vmc", label: "Chemin d'accès VMC", unit: "ml" },
+    { key: "deflecteurs", label: "Déflecteurs", unit: "ml" },
+    { key: "coiffe_spots", label: "Coiffe Pour Spots", unit: "unité" },
+    { key: "trappe_isolee", label: "Trappe d'accès isolée", unit: "unité", hasTaille: true },
+    { key: "trappe_non_isolee", label: "Trappe d'accès non isolée", unit: "unité" },
+    { key: "protection_mobilier", label: "Protection du mobilier", unit: "unité" },
+    { key: "porte_isolee_pg", label: "Porte isolée PG", unit: "unité", hasTaille: true },
+    { key: "porte_isolee_pd", label: "Porte isolée PD", unit: "unité", hasTaille: true },
+    { key: "porte_alveolaire_pd", label: "Porte alvéolaire PD", unit: "unité", hasTaille: true },
+    { key: "porte_alveolaire_pg", label: "Porte alvéolaire PG", unit: "unité", hasTaille: true },
   ];
 
   function defaultClientIti() {
@@ -709,7 +731,7 @@
       extrasTtc += line.ttc;
       return `
         <div class="zone-item">
-          <div class="zone-info">${escapeHtml(ex.label)} (${escapeHtml(ex.unit)}) — ${ex.qty} × ${fmt(ex.prix, "€")} = HT ${fmt(line.ht, "€")} / TTC ${fmt(line.ttc, "€")}</div>
+          <div class="zone-info">${escapeHtml(ex.label)} (${escapeHtml(ex.unit)})${ex.taille ? ` — taille ${escapeHtml(ex.taille)}` : ""} — ${ex.qty} × ${fmt(ex.prix, "€")} = HT ${fmt(line.ht, "€")} / TTC ${fmt(line.ttc, "€")}</div>
           <div class="opening-actions">
             <button class="btn btn-ghost btn-small" data-action="edit-poste-extra" data-poste-id="${poste.id}" data-extra-id="${ex.id}">Modifier</button>
             <button class="btn btn-danger btn-small" data-action="delete-poste-extra" data-poste-id="${poste.id}" data-extra-id="${ex.id}">✕</button>
@@ -737,6 +759,19 @@
     `;
   }
 
+  function posteSpecsLine(poste) {
+    const parts = [];
+    if (poste.isolant) {
+      const isolantLabel = poste.isolant === "autre" ? (poste.isolantAutre || "Autre") : ISOLANT_ITI_LABELS[poste.isolant];
+      parts.push(`Isolant : ${isolantLabel}${poste.epaisseur ? ` (${poste.epaisseur})` : ""}`);
+    }
+    if (poste.support) parts.push(`Support : ${poste.support}`);
+    if (poste.parement) parts.push(`Parement : ${poste.parement}`);
+    if (poste.fixation) parts.push(`Fixation : ${poste.fixation}`);
+    if (parts.length === 0) return "";
+    return `<div class="poste-specs">${parts.map(escapeHtml).join(" &nbsp;·&nbsp; ")}</div>`;
+  }
+
   function posteCardHtml(poste) {
     const c = computePoste(poste);
     const mesures = poste.mesures || [];
@@ -756,6 +791,7 @@
           <div>
             <div class="facade-name">${escapeHtml(poste.type)}</div>
             <div class="facade-dims">Surface : ${fmt(c.surface, "m²")} — Prix HT/m² ${fmt(poste.prix, "€")} · TVA ${poste.tva}% — HT ${fmt(c.mainHt, "€")} / TTC ${fmt(c.mainTtc, "€")}</div>
+            ${posteSpecsLine(poste)}
           </div>
           <div class="facade-actions">
             <button class="btn btn-ghost btn-small" data-action="edit-poste" data-poste-id="${poste.id}">Modifier</button>
@@ -1307,7 +1343,12 @@
   function posteModal(client, zone, poste) {
     const isNew = !poste;
     const title = isNew ? "Nouveau poste de travaux" : "Modifier le poste";
-    const suggestionsHtml = ITI_POSTE_SUGGESTIONS.map((s) => `<option value="${s}">`).join("");
+    const isolantVal = isNew ? "" : (poste.isolant || "");
+
+    const isolantOptionsHtml = `<option value="">— Non précisé —</option>` + Object.keys(ISOLANT_ITI_LABELS).map((key) =>
+      `<option value="${key}" ${isolantVal === key ? "selected" : ""}>${ISOLANT_ITI_LABELS[key]}</option>`
+    ).join("");
+
     const body = `
       <label>Type de travaux
         <input type="text" id="m-poste-type" list="iti-poste-suggestions" placeholder="Ex: Isolation des rampants" value="${isNew ? "" : escapeHtml(poste.type)}">
@@ -1320,24 +1361,61 @@
           <input type="number" id="m-poste-tva" step="0.1" min="0" max="100" inputmode="decimal" value="${isNew ? DEFAULT_TVA : poste.tva}">
         </label>
       </div>
+      <div class="field-row">
+        <label>Isolant
+          <select id="m-poste-isolant">${isolantOptionsHtml}</select>
+        </label>
+        <label>Épaisseur
+          <input type="text" id="m-poste-epaisseur" placeholder="Ex: 100mm, 2×100mm..." value="${isNew ? "" : escapeHtml(poste.epaisseur || "")}">
+        </label>
+      </div>
+      <label id="m-poste-isolant-autre-wrap" hidden>Préciser l'isolant
+        <input type="text" id="m-poste-isolant-autre" placeholder="Nom de l'isolant" value="${isNew ? "" : escapeHtml(poste.isolantAutre || "")}">
+      </label>
+      <div class="field-row">
+        <label>Support
+          <input type="text" id="m-poste-support" placeholder="Ex: Ossature bois, mur béton..." value="${isNew ? "" : escapeHtml(poste.support || "")}">
+        </label>
+        <label>Parement / finition
+          <input type="text" id="m-poste-parement" placeholder="Ex: Placo BA13, lambris..." value="${isNew ? "" : escapeHtml(poste.parement || "")}">
+        </label>
+      </div>
+      <label>Système de fixation
+        <input type="text" id="m-poste-fixation" placeholder="Ex: Suspentes, rails, chevilles..." value="${isNew ? "" : escapeHtml(poste.fixation || "")}">
+      </label>
     `;
     openModal(title, body, () => {
       const type = document.getElementById("m-poste-type").value.trim();
       if (!type) { alert("Merci de préciser le type de travaux."); return false; }
       const prix = round2(Math.max(0, parseNum("m-poste-prix")));
       const tva = round2(Math.min(100, Math.max(0, parseNum("m-poste-tva"))));
+      const isolant = document.getElementById("m-poste-isolant").value;
+      const isolantAutre = isolant === "autre" ? document.getElementById("m-poste-isolant-autre").value.trim() : "";
+      const epaisseur = document.getElementById("m-poste-epaisseur").value.trim();
+      const support = document.getElementById("m-poste-support").value.trim();
+      const parement = document.getElementById("m-poste-parement").value.trim();
+      const fixation = document.getElementById("m-poste-fixation").value.trim();
+      const specs = { isolant, isolantAutre, epaisseur, support, parement, fixation };
 
       if (isNew) {
         if (!zone.postes) zone.postes = [];
-        zone.postes.push({ id: uid(), type, prix, tva, mesures: [], extras: [] });
+        zone.postes.push({ id: uid(), type, prix, tva, mesures: [], extras: [], ...specs });
       } else {
         poste.type = type;
         poste.prix = prix;
         poste.tva = tva;
+        Object.assign(poste, specs);
       }
       client.updatedAt = Date.now();
       Store.upsertClient(client);
       renderClientView();
+    });
+
+    const isolantSelectEl = document.getElementById("m-poste-isolant");
+    const isolantAutreWrap = document.getElementById("m-poste-isolant-autre-wrap");
+    isolantAutreWrap.hidden = isolantSelectEl.value !== "autre";
+    isolantSelectEl.addEventListener("change", () => {
+      isolantAutreWrap.hidden = isolantSelectEl.value !== "autre";
     });
     setTimeout(() => document.getElementById("m-poste-type").focus(), 50);
   }
@@ -1388,9 +1466,21 @@
   function posteExtraModal(client, poste, extra) {
     const isNew = !extra;
     const title = isNew ? "Nouvel élément complémentaire" : "Modifier l'élément";
+    const currentKey = isNew ? "" : (extra.catalogKey || "");
+
+    const catalogOptionsHtml = `<option value="">— Personnalisé —</option>` + ITI_EXTRAS_CATALOG.map((item) =>
+      `<option value="${item.key}" ${currentKey === item.key ? "selected" : ""}>${item.label} (${item.unit})</option>`
+    ).join("");
+
     const body = `
+      <label>Élément
+        <select id="m-pextra-catalog">${catalogOptionsHtml}</select>
+      </label>
       <label>Libellé
         <input type="text" id="m-pextra-label" placeholder="Ex: Peinture, Bande à joint..." value="${isNew ? "" : escapeHtml(extra.label)}">
+      </label>
+      <label id="m-pextra-taille-wrap" hidden>Taille
+        <input type="text" id="m-pextra-taille" placeholder="Ex: 60x60, 80x204..." value="${isNew ? "" : escapeHtml(extra.taille || "")}">
       </label>
       <div class="field-row">
         <label>Quantité
@@ -1412,6 +1502,8 @@
     openModal(title, body, () => {
       const label = document.getElementById("m-pextra-label").value.trim();
       if (!label) { alert("Merci de préciser un libellé."); return false; }
+      const catalogKey = document.getElementById("m-pextra-catalog").value;
+      const taille = document.getElementById("m-pextra-taille").value.trim();
       const qty = round2(Math.max(0, parseNum("m-pextra-qty")));
       const unit = document.getElementById("m-pextra-unit").value.trim() || "unité";
       const prix = round2(Math.max(0, parseNum("m-pextra-prix")));
@@ -1419,18 +1511,40 @@
 
       if (isNew) {
         if (!poste.extras) poste.extras = [];
-        poste.extras.push({ id: uid(), label, qty, unit, prix, tva });
+        poste.extras.push({ id: uid(), label, qty, unit, prix, tva, catalogKey, taille });
       } else {
         extra.label = label;
         extra.qty = qty;
         extra.unit = unit;
         extra.prix = prix;
         extra.tva = tva;
+        extra.catalogKey = catalogKey;
+        extra.taille = taille;
       }
       client.updatedAt = Date.now();
       Store.upsertClient(client);
       renderClientView();
     });
+
+    const catalogSelect = document.getElementById("m-pextra-catalog");
+    const labelInput = document.getElementById("m-pextra-label");
+    const unitInput = document.getElementById("m-pextra-unit");
+    const tailleWrap = document.getElementById("m-pextra-taille-wrap");
+
+    const initialItem = ITI_EXTRAS_CATALOG.find((it) => it.key === currentKey);
+    tailleWrap.hidden = !(initialItem && initialItem.hasTaille);
+
+    catalogSelect.addEventListener("change", () => {
+      const item = ITI_EXTRAS_CATALOG.find((it) => it.key === catalogSelect.value);
+      if (item) {
+        labelInput.value = item.label;
+        unitInput.value = item.unit;
+        tailleWrap.hidden = !item.hasTaille;
+      } else {
+        tailleWrap.hidden = true;
+      }
+    });
+
     setTimeout(() => document.getElementById("m-pextra-label").focus(), 50);
   }
 
