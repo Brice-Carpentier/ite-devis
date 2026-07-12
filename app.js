@@ -151,7 +151,97 @@
   function computeGrandTotals(client) {
     const ite = computeIteTotals(client);
     const extras = computeClientExtrasTotals(client);
-    return { ht: ite.ht + extras.ht, ttc: ite.ttc + extras.ttc };
+    const iti = computeItiWorkTotals(client);
+    const itiExtras = computeItiExtrasTotals(client);
+    return {
+      ht: ite.ht + extras.ht + iti.ht + itiExtras.ht,
+      ttc: ite.ttc + extras.ttc + iti.ttc + itiExtras.ttc,
+    };
+  }
+
+  // ---------- Intérieur (ITI) : zones -> postes de travaux -> cotes + éléments complémentaires ----------
+
+  const ITI_POSTE_SUGGESTIONS = [
+    "Isolation des rampants",
+    "Isolation des murs",
+    "Isolation des combles perdus",
+    "Isolation des combles aménageables",
+    "Isolation des planchers bas",
+    "Plâterie / Cloisons",
+  ];
+
+  function defaultClientIti() {
+    return { zones: [] };
+  }
+
+  function getClientIti(client) {
+    if (!client.iti) client.iti = defaultClientIti();
+    if (!client.iti.zones) client.iti.zones = [];
+    return client.iti;
+  }
+
+  function computeMesureArea(m) {
+    return (m.largeur || 0) * (m.hauteur || 0) * (m.qty || 1);
+  }
+
+  function computePoste(poste) {
+    const surface = (poste.mesures || []).reduce((sum, m) => sum + computeMesureArea(m), 0);
+    const main = htTtc(surface * (poste.prix || 0), poste.tva);
+
+    let extrasHt = 0, extrasTtc = 0;
+    for (const ex of (poste.extras || [])) {
+      const lineHt = (ex.qty || 0) * (ex.prix || 0);
+      const line = htTtc(lineHt, ex.tva);
+      extrasHt += line.ht;
+      extrasTtc += line.ttc;
+    }
+
+    return {
+      surface,
+      mainHt: main.ht,
+      mainTtc: main.ttc,
+      extrasHt,
+      extrasTtc,
+      totalHt: main.ht + extrasHt,
+      totalTtc: main.ttc + extrasTtc,
+    };
+  }
+
+  function computeZoneIti(zone) {
+    let ht = 0, ttc = 0, mainHt = 0, mainTtc = 0, extrasHt = 0, extrasTtc = 0;
+    for (const poste of (zone.postes || [])) {
+      const c = computePoste(poste);
+      ht += c.totalHt; ttc += c.totalTtc;
+      mainHt += c.mainHt; mainTtc += c.mainTtc;
+      extrasHt += c.extrasHt; extrasTtc += c.extrasTtc;
+    }
+    return { ht, ttc, mainHt, mainTtc, extrasHt, extrasTtc };
+  }
+
+  function computeItiWorkTotals(client) {
+    let ht = 0, ttc = 0;
+    for (const zone of getClientIti(client).zones) {
+      const c = computeZoneIti(zone);
+      ht += c.mainHt;
+      ttc += c.mainTtc;
+    }
+    return { ht, ttc };
+  }
+
+  function computeItiExtrasTotals(client) {
+    let ht = 0, ttc = 0;
+    for (const zone of getClientIti(client).zones) {
+      const c = computeZoneIti(zone);
+      ht += c.extrasHt;
+      ttc += c.extrasTtc;
+    }
+    return { ht, ttc };
+  }
+
+  function computeItiTotals(client) {
+    const work = computeItiWorkTotals(client);
+    const extras = computeItiExtrasTotals(client);
+    return { ht: work.ht + extras.ht, ttc: work.ttc + extras.ttc };
   }
 
   // Migration : les éléments complémentaires étaient globaux au client avant d'être rattachés aux façades.
@@ -307,6 +397,20 @@
   const emptyFacadesEl = document.getElementById("empty-facades");
   const expandedFacadeExtras = new Set();
 
+  const tabExterieurBtn = document.getElementById("tab-exterieur");
+  const tabInterieurBtn = document.getElementById("tab-interieur");
+  const sectionExterieurEl = document.getElementById("section-exterieur");
+  const sectionInterieurEl = document.getElementById("section-interieur");
+  let activeSection = "exterieur";
+
+  const itiZoneListEl = document.getElementById("iti-zone-list");
+  const emptyItiZonesEl = document.getElementById("empty-iti-zones");
+  const expandedPosteExtras = new Set();
+  const totalItiHtEl = document.getElementById("total-iti-ht");
+  const totalItiTtcEl = document.getElementById("total-iti-ttc");
+  const totalItiExtrasHtEl = document.getElementById("total-iti-extras-ht");
+  const totalItiExtrasTtcEl = document.getElementById("total-iti-extras-ttc");
+
   const totSurface = document.getElementById("tot-surface");
   const totTableaux = document.getElementById("tot-tableaux");
   const totAppuis = document.getElementById("tot-appuis");
@@ -349,6 +453,7 @@
     currentClientId = id;
     viewClients.hidden = true;
     viewClient.hidden = false;
+    setActiveSection("exterieur");
     renderClientView();
   }
 
@@ -408,8 +513,20 @@
     fNotes.value = client.notes || "";
 
     renderFacadeList(client);
+    renderItiZoneList(client);
     renderTotals(client);
   }
+
+  function setActiveSection(section) {
+    activeSection = section;
+    sectionExterieurEl.hidden = section !== "exterieur";
+    sectionInterieurEl.hidden = section !== "interieur";
+    tabExterieurBtn.classList.toggle("active", section === "exterieur");
+    tabInterieurBtn.classList.toggle("active", section === "interieur");
+  }
+
+  tabExterieurBtn.addEventListener("click", () => setActiveSection("exterieur"));
+  tabInterieurBtn.addEventListener("click", () => setActiveSection("interieur"));
 
   const ZONE_KIND_LABELS = { ajout: "Ajout", deduit: "Déduit", autre: "Autre" };
   const ZONE_TYPE_ICONS = { rectangle: "▭", triangle: "🔺" };
@@ -580,6 +697,115 @@
     }
   }
 
+  // ---------- Render : Intérieur (ITI) ----------
+
+  function posteExtrasHtml(poste) {
+    const expanded = expandedPosteExtras.has(poste.id);
+    const extras = poste.extras || [];
+    let extrasHt = 0, extrasTtc = 0;
+    const rows = extras.map((ex) => {
+      const line = htTtc((ex.qty || 0) * (ex.prix || 0), ex.tva);
+      extrasHt += line.ht;
+      extrasTtc += line.ttc;
+      return `
+        <div class="zone-item">
+          <div class="zone-info">${escapeHtml(ex.label)} (${escapeHtml(ex.unit)}) — ${ex.qty} × ${fmt(ex.prix, "€")} = HT ${fmt(line.ht, "€")} / TTC ${fmt(line.ttc, "€")}</div>
+          <div class="opening-actions">
+            <button class="btn btn-ghost btn-small" data-action="edit-poste-extra" data-poste-id="${poste.id}" data-extra-id="${ex.id}">Modifier</button>
+            <button class="btn btn-danger btn-small" data-action="delete-poste-extra" data-poste-id="${poste.id}" data-extra-id="${ex.id}">✕</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    return `
+      <div class="facade-extras">
+        <button type="button" class="facade-extras-toggle" data-action="toggle-poste-extras" data-poste-id="${poste.id}">
+          Éléments complémentaires${extras.length > 0 ? ` (${extras.length})` : ""} ${expanded ? "▾" : "▸"}
+        </button>
+        <div class="facade-extras-body" ${expanded ? "" : "hidden"}>
+          ${rows || '<p class="empty-msg zones-empty">Aucun élément complémentaire pour ce poste.</p>'}
+          <div class="add-opening-row">
+            <button class="btn btn-primary btn-small" data-action="add-poste-extra" data-poste-id="${poste.id}">+ Ajouter un élément</button>
+          </div>
+          <div class="extras-total-row">
+            <span>Total éléments (poste)</span>
+            <span>HT ${fmt(extrasHt, "€")} &nbsp;/&nbsp; TTC ${fmt(extrasTtc, "€")}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function posteCardHtml(poste) {
+    const c = computePoste(poste);
+    const mesures = poste.mesures || [];
+    const mesuresHtml = mesures.map((m) => `
+      <div class="zone-item">
+        <div class="zone-info">${escapeHtml(m.localisation)} — ${m.largeur.toFixed(2)} × ${m.hauteur.toFixed(2)} m ${m.qty > 1 ? "× " + m.qty : ""} = ${fmt(computeMesureArea(m), "m²")}</div>
+        <div class="opening-actions">
+          <button class="btn btn-ghost btn-small" data-action="edit-mesure" data-poste-id="${poste.id}" data-mesure-id="${m.id}">Modifier</button>
+          <button class="btn btn-danger btn-small" data-action="delete-mesure" data-poste-id="${poste.id}" data-mesure-id="${m.id}">✕</button>
+        </div>
+      </div>
+    `).join("");
+
+    return `
+      <div class="poste-card">
+        <div class="facade-head">
+          <div>
+            <div class="facade-name">${escapeHtml(poste.type)}</div>
+            <div class="facade-dims">Surface : ${fmt(c.surface, "m²")} — Prix HT/m² ${fmt(poste.prix, "€")} · TVA ${poste.tva}% — HT ${fmt(c.mainHt, "€")} / TTC ${fmt(c.mainTtc, "€")}</div>
+          </div>
+          <div class="facade-actions">
+            <button class="btn btn-ghost btn-small" data-action="edit-poste" data-poste-id="${poste.id}">Modifier</button>
+            <button class="btn btn-danger btn-small" data-action="delete-poste" data-poste-id="${poste.id}">Supprimer</button>
+          </div>
+        </div>
+
+        <div class="zone-list">${mesuresHtml || '<p class="empty-msg zones-empty">Aucune cote. Ajoutez-en une.</p>'}</div>
+
+        <div class="add-opening-row">
+          <button class="btn btn-primary btn-small" data-action="add-mesure" data-poste-id="${poste.id}">+ Ajouter une cote</button>
+        </div>
+
+        ${posteExtrasHtml(poste)}
+      </div>
+    `;
+  }
+
+  function renderItiZoneList(client) {
+    const iti = getClientIti(client);
+    itiZoneListEl.innerHTML = "";
+    emptyItiZonesEl.hidden = iti.zones.length > 0;
+
+    for (const zone of iti.zones) {
+      const zc = computeZoneIti(zone);
+      const card = document.createElement("div");
+      card.className = "facade-card";
+      const postesHtml = (zone.postes || []).map((p) => posteCardHtml(p)).join("");
+      card.innerHTML = `
+        <div class="facade-head">
+          <div>
+            <div class="facade-name">${escapeHtml(zone.nom)}</div>
+            <div class="facade-dims">Total zone : HT ${fmt(zc.ht, "€")} / TTC ${fmt(zc.ttc, "€")}</div>
+          </div>
+          <div class="facade-actions">
+            <button class="btn btn-ghost btn-small" data-action="edit-zone-iti" data-zone-id="${zone.id}">Modifier</button>
+            <button class="btn btn-danger btn-small" data-action="delete-zone-iti" data-zone-id="${zone.id}">Supprimer</button>
+          </div>
+        </div>
+
+        <div class="poste-list">${postesHtml || '<p class="empty-msg zones-empty">Aucun poste de travaux. Ajoutez-en un.</p>'}</div>
+
+        <div class="add-opening-row">
+          <button class="btn btn-primary btn-small" data-action="add-poste" data-zone-id="${zone.id}">+ Ajouter un poste de travaux</button>
+        </div>
+      `;
+      itiZoneListEl.appendChild(card);
+    }
+  }
+
   function renderTotals(client) {
     const t = computeClientTotals(client);
     totSurface.textContent = fmt(t.nette, "m²");
@@ -615,6 +841,14 @@
     const extrasTotals = computeClientExtrasTotals(client);
     totalExtrasHtEl.textContent = fmt(extrasTotals.ht, "€");
     totalExtrasTtcEl.textContent = fmt(extrasTotals.ttc, "€");
+
+    const itiWork = computeItiWorkTotals(client);
+    totalItiHtEl.textContent = fmt(itiWork.ht, "€");
+    totalItiTtcEl.textContent = fmt(itiWork.ttc, "€");
+
+    const itiExtras = computeItiExtrasTotals(client);
+    totalItiExtrasHtEl.textContent = fmt(itiExtras.ht, "€");
+    totalItiExtrasTtcEl.textContent = fmt(itiExtras.ttc, "€");
 
     const grand = computeGrandTotals(client);
     grandTotalHtEl.textContent = fmt(grand.ht, "€");
@@ -686,6 +920,7 @@
       facades: [],
       extras: {},
       prix: defaultClientPrix(),
+      iti: defaultClientIti(),
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -1025,6 +1260,250 @@
       if (!facade) return;
       const val = parseFloat((tvaInput.value || "0").replace(",", "."));
       setExtraTva(client, facade, tvaInput.dataset.key, isNaN(val) ? 0 : val);
+    }
+  });
+
+  // ---------- Intérieur (ITI) : recherche, modals, évènements ----------
+
+  function findZoneIti(client, zoneId) {
+    return getClientIti(client).zones.find((z) => z.id === zoneId);
+  }
+
+  function findPosteIti(client, posteId) {
+    for (const zone of getClientIti(client).zones) {
+      const poste = (zone.postes || []).find((p) => p.id === posteId);
+      if (poste) return { zone, poste };
+    }
+    return null;
+  }
+
+  function zoneItiModal(client, zone) {
+    const isNew = !zone;
+    const title = isNew ? "Nouvelle zone" : "Modifier la zone";
+    const body = `
+      <label>Nom de la zone
+        <input type="text" id="m-zone-nom" placeholder="Ex: RDC, R+1, Combles..." value="${isNew ? "" : escapeHtml(zone.nom)}">
+      </label>
+    `;
+    openModal(title, body, () => {
+      const nom = document.getElementById("m-zone-nom").value.trim() || "Zone";
+      if (isNew) {
+        getClientIti(client).zones.push({ id: uid(), nom, postes: [] });
+      } else {
+        zone.nom = nom;
+      }
+      client.updatedAt = Date.now();
+      Store.upsertClient(client);
+      renderClientView();
+    });
+    setTimeout(() => document.getElementById("m-zone-nom").focus(), 50);
+  }
+
+  document.getElementById("btn-add-zone-iti").addEventListener("click", () => {
+    const client = Store.getClient(currentClientId);
+    zoneItiModal(client, null);
+  });
+
+  function posteModal(client, zone, poste) {
+    const isNew = !poste;
+    const title = isNew ? "Nouveau poste de travaux" : "Modifier le poste";
+    const suggestionsHtml = ITI_POSTE_SUGGESTIONS.map((s) => `<option value="${s}">`).join("");
+    const body = `
+      <label>Type de travaux
+        <input type="text" id="m-poste-type" list="iti-poste-suggestions" placeholder="Ex: Isolation des rampants" value="${isNew ? "" : escapeHtml(poste.type)}">
+      </label>
+      <div class="field-row">
+        <label>Prix HT/m² (€)
+          <input type="number" id="m-poste-prix" step="0.01" min="0" inputmode="decimal" value="${isNew ? "0" : poste.prix}">
+        </label>
+        <label>TVA (%)
+          <input type="number" id="m-poste-tva" step="0.1" min="0" max="100" inputmode="decimal" value="${isNew ? DEFAULT_TVA : poste.tva}">
+        </label>
+      </div>
+    `;
+    openModal(title, body, () => {
+      const type = document.getElementById("m-poste-type").value.trim();
+      if (!type) { alert("Merci de préciser le type de travaux."); return false; }
+      const prix = round2(Math.max(0, parseNum("m-poste-prix")));
+      const tva = round2(Math.min(100, Math.max(0, parseNum("m-poste-tva"))));
+
+      if (isNew) {
+        if (!zone.postes) zone.postes = [];
+        zone.postes.push({ id: uid(), type, prix, tva, mesures: [], extras: [] });
+      } else {
+        poste.type = type;
+        poste.prix = prix;
+        poste.tva = tva;
+      }
+      client.updatedAt = Date.now();
+      Store.upsertClient(client);
+      renderClientView();
+    });
+    setTimeout(() => document.getElementById("m-poste-type").focus(), 50);
+  }
+
+  function mesureModal(client, poste, mesure) {
+    const isNew = !mesure;
+    const title = isNew ? "Nouvelle cote" : "Modifier la cote";
+    const body = `
+      <label>Localisation
+        <input type="text" id="m-mesure-loc" placeholder="Ex: Chambre 1, Salon, Mur nord..." value="${isNew ? "" : escapeHtml(mesure.localisation)}">
+      </label>
+      <div class="field-row">
+        <label>Largeur (m)
+          <input type="number" id="m-mesure-largeur" step="0.01" min="0" inputmode="decimal" value="${isNew ? "" : mesure.largeur}">
+        </label>
+        <label>Hauteur (m)
+          <input type="number" id="m-mesure-hauteur" step="0.01" min="0" inputmode="decimal" value="${isNew ? "" : mesure.hauteur}">
+        </label>
+        <label>Quantité
+          <input type="number" id="m-mesure-qty" step="1" min="1" value="${isNew ? "1" : mesure.qty}">
+        </label>
+      </div>
+    `;
+    openModal(title, body, () => {
+      const localisation = document.getElementById("m-mesure-loc").value.trim() || "Sans nom";
+      const largeur = parseNum("m-mesure-largeur");
+      const hauteur = parseNum("m-mesure-hauteur");
+      const qty = Math.max(1, Math.round(parseNum("m-mesure-qty") || 1));
+      if (largeur <= 0 || hauteur <= 0) { alert("Merci de renseigner largeur et hauteur."); return false; }
+
+      if (isNew) {
+        if (!poste.mesures) poste.mesures = [];
+        poste.mesures.push({ id: uid(), localisation, largeur, hauteur, qty });
+      } else {
+        mesure.localisation = localisation;
+        mesure.largeur = largeur;
+        mesure.hauteur = hauteur;
+        mesure.qty = qty;
+      }
+      const client2 = Store.getClient(currentClientId);
+      client2.updatedAt = Date.now();
+      Store.upsertClient(client2);
+      renderClientView();
+    });
+    setTimeout(() => document.getElementById("m-mesure-loc").focus(), 50);
+  }
+
+  function posteExtraModal(client, poste, extra) {
+    const isNew = !extra;
+    const title = isNew ? "Nouvel élément complémentaire" : "Modifier l'élément";
+    const body = `
+      <label>Libellé
+        <input type="text" id="m-pextra-label" placeholder="Ex: Peinture, Bande à joint..." value="${isNew ? "" : escapeHtml(extra.label)}">
+      </label>
+      <div class="field-row">
+        <label>Quantité
+          <input type="number" id="m-pextra-qty" step="0.01" min="0" inputmode="decimal" value="${isNew ? "1" : extra.qty}">
+        </label>
+        <label>Unité
+          <input type="text" id="m-pextra-unit" placeholder="m², ml, unité..." value="${isNew ? "m²" : escapeHtml(extra.unit)}">
+        </label>
+      </div>
+      <div class="field-row">
+        <label>Prix HT (€)
+          <input type="number" id="m-pextra-prix" step="0.01" min="0" inputmode="decimal" value="${isNew ? "0" : extra.prix}">
+        </label>
+        <label>TVA (%)
+          <input type="number" id="m-pextra-tva" step="0.1" min="0" max="100" inputmode="decimal" value="${isNew ? DEFAULT_TVA : extra.tva}">
+        </label>
+      </div>
+    `;
+    openModal(title, body, () => {
+      const label = document.getElementById("m-pextra-label").value.trim();
+      if (!label) { alert("Merci de préciser un libellé."); return false; }
+      const qty = round2(Math.max(0, parseNum("m-pextra-qty")));
+      const unit = document.getElementById("m-pextra-unit").value.trim() || "unité";
+      const prix = round2(Math.max(0, parseNum("m-pextra-prix")));
+      const tva = round2(Math.min(100, Math.max(0, parseNum("m-pextra-tva"))));
+
+      if (isNew) {
+        if (!poste.extras) poste.extras = [];
+        poste.extras.push({ id: uid(), label, qty, unit, prix, tva });
+      } else {
+        extra.label = label;
+        extra.qty = qty;
+        extra.unit = unit;
+        extra.prix = prix;
+        extra.tva = tva;
+      }
+      client.updatedAt = Date.now();
+      Store.upsertClient(client);
+      renderClientView();
+    });
+    setTimeout(() => document.getElementById("m-pextra-label").focus(), 50);
+  }
+
+  itiZoneListEl.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-action]");
+    if (!btn) return;
+    const client = Store.getClient(currentClientId);
+    if (!client) return;
+    const action = btn.dataset.action;
+
+    if (action === "edit-zone-iti") {
+      zoneItiModal(client, findZoneIti(client, btn.dataset.zoneId));
+    } else if (action === "delete-zone-iti") {
+      const zone = findZoneIti(client, btn.dataset.zoneId);
+      if (confirm(`Supprimer la zone "${zone.nom}" et tous ses postes de travaux ?`)) {
+        const iti = getClientIti(client);
+        iti.zones = iti.zones.filter((z) => z.id !== btn.dataset.zoneId);
+        client.updatedAt = Date.now();
+        Store.upsertClient(client);
+        renderClientView();
+      }
+    } else if (action === "add-poste") {
+      posteModal(client, findZoneIti(client, btn.dataset.zoneId), null);
+    } else if (action === "edit-poste") {
+      const found = findPosteIti(client, btn.dataset.posteId);
+      if (found) posteModal(client, found.zone, found.poste);
+    } else if (action === "delete-poste") {
+      const found = findPosteIti(client, btn.dataset.posteId);
+      if (found && confirm(`Supprimer le poste "${found.poste.type}" ?`)) {
+        found.zone.postes = found.zone.postes.filter((p) => p.id !== btn.dataset.posteId);
+        client.updatedAt = Date.now();
+        Store.upsertClient(client);
+        renderClientView();
+      }
+    } else if (action === "add-mesure") {
+      const found = findPosteIti(client, btn.dataset.posteId);
+      if (found) mesureModal(client, found.poste, null);
+    } else if (action === "edit-mesure") {
+      const found = findPosteIti(client, btn.dataset.posteId);
+      if (found) {
+        const mesure = (found.poste.mesures || []).find((m) => m.id === btn.dataset.mesureId);
+        mesureModal(client, found.poste, mesure);
+      }
+    } else if (action === "delete-mesure") {
+      const found = findPosteIti(client, btn.dataset.posteId);
+      if (found) {
+        found.poste.mesures = (found.poste.mesures || []).filter((m) => m.id !== btn.dataset.mesureId);
+        client.updatedAt = Date.now();
+        Store.upsertClient(client);
+        renderClientView();
+      }
+    } else if (action === "toggle-poste-extras") {
+      const posteId = btn.dataset.posteId;
+      if (expandedPosteExtras.has(posteId)) expandedPosteExtras.delete(posteId);
+      else expandedPosteExtras.add(posteId);
+      renderItiZoneList(client);
+    } else if (action === "add-poste-extra") {
+      const found = findPosteIti(client, btn.dataset.posteId);
+      if (found) posteExtraModal(client, found.poste, null);
+    } else if (action === "edit-poste-extra") {
+      const found = findPosteIti(client, btn.dataset.posteId);
+      if (found) {
+        const extra = (found.poste.extras || []).find((ex) => ex.id === btn.dataset.extraId);
+        posteExtraModal(client, found.poste, extra);
+      }
+    } else if (action === "delete-poste-extra") {
+      const found = findPosteIti(client, btn.dataset.posteId);
+      if (found) {
+        found.poste.extras = (found.poste.extras || []).filter((ex) => ex.id !== btn.dataset.extraId);
+        client.updatedAt = Date.now();
+        Store.upsertClient(client);
+        renderClientView();
+      }
     }
   });
 

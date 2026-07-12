@@ -61,6 +61,12 @@
       </label>
     </div>
 
+    <div class="section-tabs">
+      <button id="tab-exterieur" class="section-tab active" data-section="exterieur">🏠 Extérieur (ITE)</button>
+      <button id="tab-interieur" class="section-tab" data-section="interieur">🛋️ Intérieur (ITI)</button>
+    </div>
+
+    <div id="section-exterieur">
     <div class="section-header">
       <h2>Façades</h2>
       <button id="btn-add-facade" class="btn btn-primary btn-lg">+ Ajouter une façade</button>
@@ -70,7 +76,7 @@
     <p id="empty-facades" class="empty-msg" hidden>Aucune façade. Ajoutez la première façade du chantier.</p>
 
     <div class="totals-bar card">
-      <h2>Total chantier</h2>
+      <h2>Total extérieur (ITE)</h2>
       <div class="totals-grid">
         <div class="total-box">
           <span class="total-label">Surface nette à isoler</span>
@@ -127,17 +133,43 @@
         <span>HT <strong id="total-ite-ht">0,00 €</strong> &nbsp;/&nbsp; TTC <strong id="total-ite-ttc">0,00 €</strong></span>
       </div>
       <div class="subtotal-summary-row">
-        <span>Total éléments complémentaires seul</span>
+        <span>Total éléments complémentaires (extérieur) seul</span>
         <span>HT <strong id="total-extras-ht">0,00 €</strong> &nbsp;/&nbsp; TTC <strong id="total-extras-ttc">0,00 €</strong></span>
       </div>
+    </div>
+    </div>
 
+    <div id="section-interieur" hidden>
+      <div class="section-header">
+        <h2>Zones intérieures</h2>
+        <button id="btn-add-zone-iti" class="btn btn-primary btn-lg">+ Ajouter une zone</button>
+      </div>
+
+      <div id="iti-zone-list"></div>
+      <p id="empty-iti-zones" class="empty-msg" hidden>Aucune zone. Ajoutez une zone (RDC, R+1, Combles...).</p>
+
+      <div class="totals-bar card">
+        <h2>Total intérieur (ITI)</h2>
+        <div class="subtotal-summary-row">
+          <span>Total travaux ITI seul</span>
+          <span>HT <strong id="total-iti-ht">0,00 €</strong> &nbsp;/&nbsp; TTC <strong id="total-iti-ttc">0,00 €</strong></span>
+        </div>
+        <div class="subtotal-summary-row">
+          <span>Total éléments complémentaires (intérieur) seul</span>
+          <span>HT <strong id="total-iti-extras-ht">0,00 €</strong> &nbsp;/&nbsp; TTC <strong id="total-iti-extras-ttc">0,00 €</strong></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="totals-bar card grand-total-card">
+      <h2>Total général du chantier</h2>
       <div class="grand-total-row">
         <div class="grand-total-block">
-          <span>Total global HT</span>
+          <span>Total général HT</span>
           <span id="grand-total-ht">0,00 €</span>
         </div>
         <div class="grand-total-block">
-          <span>Total global TTC</span>
+          <span>Total général TTC</span>
           <span id="grand-total-ttc">0,00 €</span>
         </div>
       </div>
@@ -145,6 +177,15 @@
   </section>
 
 </div>
+
+<datalist id="iti-poste-suggestions">
+  <option value="Isolation des rampants">
+  <option value="Isolation des murs">
+  <option value="Isolation des combles perdus">
+  <option value="Isolation des combles aménageables">
+  <option value="Isolation des planchers bas">
+  <option value="Plâterie / Cloisons">
+</datalist>
 
 <!-- ===== MODALE FACADE / OUVERTURE ===== -->
 <div id="modal-overlay" class="modal-overlay" hidden>

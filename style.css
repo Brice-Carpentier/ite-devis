@@ -136,6 +136,37 @@ label {
 
 .empty-msg { color: var(--text-muted); text-align: center; padding: 30px 10px; }
 
+.section-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 18px 0 4px;
+  border-bottom: 2px solid var(--border);
+}
+.section-tab {
+  flex: 1;
+  padding: 14px 12px;
+  border: none;
+  background: none;
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+}
+.section-tab.active { color: var(--blue-dark); border-bottom-color: var(--blue); }
+
+.grand-total-card { margin-top: 26px; }
+.grand-total-card .grand-total-row { margin-top: 10px; }
+
+.poste-list { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
+.poste-card {
+  background: #f6f9fc;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
 .section-header {
   display: flex;
   align-items: center;
