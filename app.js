@@ -2545,6 +2545,28 @@
     ctx.fillText(text, x, y);
   }
 
+  // Cote d'un trait : affichée au-dessus du milieu du segment (décalée perpendiculairement
+  // pour ne pas être coupée par le trait), quelle que soit son orientation.
+  function drawLineLabel(ctx, text, p1, p2, color) {
+    if (!text) return;
+    const midX = (p1.x + p2.x) / 2;
+    const midY = (p1.y + p2.y) / 2;
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const len = Math.hypot(dx, dy) || 1;
+    let px = -dy / len;
+    let py = dx / len;
+    if (py > 0) { px = -px; py = -py; } // toujours afficher du côté "haut" de la ligne
+    const offset = 12;
+    ctx.font = SKETCH_FONT;
+    ctx.fillStyle = color;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    ctx.fillText(text, midX + px * offset, midY + py * offset);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+  }
+
   function sketchResizeCanvas() {
     const wrap = sketchCanvas.parentElement;
     const rect = wrap.getBoundingClientRect();
@@ -2738,7 +2760,11 @@
       }
     } else if (sketchMode === "ligne" && strokeStart && lastMovePoint) {
       const moved = Math.abs(lastMovePoint.x - strokeStart.x) > 4 || Math.abs(lastMovePoint.y - strokeStart.y) > 4;
-      if (moved) addSnapPoints([strokeStart, lastMovePoint]);
+      if (moved) {
+        addSnapPoints([strokeStart, lastMovePoint]);
+        const coteText = window.prompt("Longueur de ce trait (ex: 3.50) — laissez vide pour ne pas coter :", "");
+        if (coteText) drawLineLabel(sketchCtx, coteText, strokeStart, lastMovePoint, currentColor);
+      }
     } else if (sketchMode === "texte" && strokeStart) {
       const text = window.prompt("Texte à ajouter :", "");
       if (text) drawFreeText(sketchCtx, text, strokeStart.x, strokeStart.y, currentColor);
