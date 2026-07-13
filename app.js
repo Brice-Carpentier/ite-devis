@@ -3,6 +3,23 @@
 
   const STORAGE_KEY = "ite_clients_v1";
 
+  // ---------- Firebase (compte + synchronisation multi-appareils) ----------
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDQzQ1Vc1PFmAfK6n8O5X7AijD-p6SZ8Rg",
+    authDomain: "metrages-pour-vt-ite---iti.firebaseapp.com",
+    projectId: "metrages-pour-vt-ite---iti",
+    storageBucket: "metrages-pour-vt-ite---iti.firebasestorage.app",
+    messagingSenderId: "308598591326",
+    appId: "1:308598591326:web:205a68fa20127b44bf89cf",
+  };
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+  db.enablePersistence({ synchronizeTabs: true }).catch((err) => {
+    console.warn("Persistance hors-ligne Firestore indisponible :", err.code);
+  });
+
   /* ---------------------------------------------------------
      Formules métier ITE (confirmées par l'utilisateur) :
      - Surface nette façade = largeur*hauteur - somme(surfaces ouvertures)
@@ -459,20 +476,115 @@
       const idx = this.data.findIndex((c) => c.id === client.id);
       if (idx >= 0) this.data[idx] = client; else this.data.push(client);
       this.save();
+      pushClientToFirestore(client);
     },
     deleteClient(id) {
       this.data = this.data.filter((c) => c.id !== id);
       this.save();
+      deleteClientFromFirestore(id);
     },
   };
 
   Store.load();
+
+  // ---------- Synchronisation Firestore (users/{uid}/clients/{clientId}) ----------
+  // Le stockage local reste la source instantanée (démarrage hors-ligne immédiat) ; Firestore
+  // synchronise en tâche de fond dès qu'un compte est connecté et qu'il y a du réseau.
+
+  let currentUid = null;
+  let firestoreUnsub = null;
+
+  function clientsCollection(uid) {
+    return db.collection("users").doc(uid).collection("clients");
+  }
+
+  function pushClientToFirestore(client) {
+    if (!currentUid) return;
+    // Passe par JSON pour éliminer les éventuels champs `undefined` (Firestore les refuse,
+    // contrairement à JSON.stringify utilisé pour le stockage local).
+    const payload = JSON.parse(JSON.stringify(client));
+    clientsCollection(currentUid).doc(client.id).set(payload).catch((err) => {
+      console.error("Échec de synchronisation (sauvegarde en ligne)", err);
+      showSyncWarning("⚠ Cette fiche n'a pas pu être synchronisée en ligne (pas de réseau, ou trop de photos/données). Elle reste sauvegardée sur cet appareil.");
+    });
+  }
+
+  function deleteClientFromFirestore(id) {
+    if (!currentUid) return;
+    clientsCollection(currentUid).doc(id).delete().catch((err) => {
+      console.error("Échec de synchronisation (suppression en ligne)", err);
+    });
+  }
+
+  function refreshCurrentView() {
+    if (!viewClients.hidden) renderClientList();
+    else if (!viewClient.hidden && currentClientId) renderClientView();
+  }
+
+  function startFirestoreSync(uid) {
+    stopFirestoreSync();
+    currentUid = uid;
+    const col = clientsCollection(uid);
+    let initialSyncDone = false;
+
+    firestoreUnsub = col.onSnapshot((snapshot) => {
+      let changed = false;
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === "removed") {
+          const idx = Store.data.findIndex((c) => c.id === change.doc.id);
+          if (idx >= 0) { Store.data.splice(idx, 1); changed = true; }
+          return;
+        }
+        const remote = change.doc.data();
+        const local = Store.getClient(change.doc.id);
+        if (!local || (remote.updatedAt || 0) > (local.updatedAt || 0)) {
+          const idx = Store.data.findIndex((c) => c.id === change.doc.id);
+          if (idx >= 0) Store.data[idx] = remote; else Store.data.push(remote);
+          changed = true;
+        }
+      });
+      if (changed) {
+        Store.save();
+        refreshCurrentView();
+      }
+      if (!initialSyncDone) {
+        initialSyncDone = true;
+        // Pousse en ligne les fiches créées hors-ligne avant la première connexion.
+        const remoteIds = new Set(snapshot.docs.map((d) => d.id));
+        for (const client of Store.data) {
+          if (!remoteIds.has(client.id)) pushClientToFirestore(client);
+        }
+      }
+    }, (err) => {
+      console.error("Erreur de synchronisation Firestore", err);
+      showSyncWarning("⚠ Synchronisation en ligne indisponible (pas de réseau). Tes données restent accessibles sur cet appareil.");
+    });
+  }
+
+  function stopFirestoreSync() {
+    if (firestoreUnsub) { firestoreUnsub(); firestoreUnsub = null; }
+    currentUid = null;
+  }
 
   // ---------- State ----------
 
   let currentClientId = null;
 
   // ---------- DOM refs ----------
+
+  const viewAuth = document.getElementById("view-auth");
+  const authEmailInput = document.getElementById("auth-email");
+  const authPasswordInput = document.getElementById("auth-password");
+  const authErrorEl = document.getElementById("auth-error");
+  const authSigninBtn = document.getElementById("auth-signin");
+  const authSignupBtn = document.getElementById("auth-signup");
+  const authResetBtn = document.getElementById("auth-reset");
+  const authUserEmailEl = document.getElementById("auth-user-email");
+  const btnSignOut = document.getElementById("btn-sign-out");
+
+  const syncBannerEl = document.getElementById("sync-banner");
+  const syncBannerTextEl = document.getElementById("sync-banner-text");
+  const syncBannerCloseEl = document.getElementById("sync-banner-close");
 
   const viewClients = document.getElementById("view-clients");
   const viewClient = document.getElementById("view-client");
@@ -540,6 +652,88 @@
   const photoLightboxCloseEl = document.getElementById("photo-lightbox-close");
   const photoLightboxDeleteEl = document.getElementById("photo-lightbox-delete");
   const printAreaEl = document.getElementById("print-area");
+
+  // ---------- Bandeau d'alerte de synchronisation ----------
+
+  function showSyncWarning(msg) {
+    syncBannerTextEl.textContent = msg;
+    syncBannerEl.hidden = false;
+  }
+
+  syncBannerCloseEl.addEventListener("click", () => { syncBannerEl.hidden = true; });
+
+  // ---------- Connexion (email / mot de passe) ----------
+
+  const AUTH_ERROR_MESSAGES = {
+    "auth/invalid-email": "Adresse email invalide.",
+    "auth/user-not-found": "Aucun compte avec cet email.",
+    "auth/wrong-password": "Mot de passe incorrect.",
+    "auth/invalid-credential": "Email ou mot de passe incorrect.",
+    "auth/email-already-in-use": "Un compte existe déjà avec cet email. Clique \"Se connecter\".",
+    "auth/weak-password": "Mot de passe trop court (6 caractères minimum).",
+    "auth/network-request-failed": "Pas de connexion internet. Réessaie plus tard.",
+    "auth/missing-password": "Merci de renseigner un mot de passe.",
+  };
+
+  function authErrorMessage(err) {
+    return AUTH_ERROR_MESSAGES[err.code] || ("Erreur : " + err.message);
+  }
+
+  function setAuthError(msg) {
+    authErrorEl.textContent = msg;
+    authErrorEl.hidden = !msg;
+  }
+
+  authSigninBtn.addEventListener("click", () => {
+    setAuthError("");
+    const email = authEmailInput.value.trim();
+    const password = authPasswordInput.value;
+    if (!email || !password) { setAuthError("Renseigne ton email et ton mot de passe."); return; }
+    authSigninBtn.disabled = true;
+    auth.signInWithEmailAndPassword(email, password)
+      .catch((err) => setAuthError(authErrorMessage(err)))
+      .finally(() => { authSigninBtn.disabled = false; });
+  });
+
+  authSignupBtn.addEventListener("click", () => {
+    setAuthError("");
+    const email = authEmailInput.value.trim();
+    const password = authPasswordInput.value;
+    if (!email || !password) { setAuthError("Renseigne un email et un mot de passe (6 caractères minimum)."); return; }
+    authSignupBtn.disabled = true;
+    auth.createUserWithEmailAndPassword(email, password)
+      .catch((err) => setAuthError(authErrorMessage(err)))
+      .finally(() => { authSignupBtn.disabled = false; });
+  });
+
+  authResetBtn.addEventListener("click", () => {
+    setAuthError("");
+    const email = authEmailInput.value.trim();
+    if (!email) { setAuthError("Renseigne ton email ci-dessus, puis clique à nouveau sur ce lien."); return; }
+    auth.sendPasswordResetEmail(email)
+      .then(() => setAuthError("Email de réinitialisation envoyé. Vérifie ta boîte mail."))
+      .catch((err) => setAuthError(authErrorMessage(err)));
+  });
+
+  btnSignOut.addEventListener("click", () => {
+    if (confirm("Se déconnecter de cet appareil ?")) auth.signOut();
+  });
+
+  auth.onAuthStateChanged((user) => {
+    if (user) {
+      viewAuth.hidden = true;
+      authUserEmailEl.textContent = user.email || "";
+      authPasswordInput.value = "";
+      setAuthError("");
+      startFirestoreSync(user.uid);
+      showClientsView();
+    } else {
+      stopFirestoreSync();
+      viewClients.hidden = true;
+      viewClient.hidden = true;
+      viewAuth.hidden = false;
+    }
+  });
 
   // ---------- Navigation ----------
 
@@ -2754,6 +2948,6 @@
   }
 
   // ---------- Démarrage ----------
-
-  showClientsView();
+  // L'affichage initial (écran de connexion ou liste clients) est déclenché par
+  // auth.onAuthStateChanged ci-dessus, dès que Firebase a déterminé si un compte est connecté.
 })();

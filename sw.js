@@ -1,5 +1,5 @@
 // Incrémenter ce numéro à chaque mise à jour de l'appli pour forcer le rechargement du cache.
-const CACHE_NAME = "ite-devis-cache-v8";
+const CACHE_NAME = "ite-devis-cache-v9";
 
 const APP_SHELL = [
   "./",
@@ -11,6 +11,9 @@ const APP_SHELL = [
   "./icons/icon-512.png",
   "./vendor/html2canvas.min.js",
   "./vendor/jspdf.umd.min.js",
+  "./vendor/firebase-app-compat.js",
+  "./vendor/firebase-auth-compat.js",
+  "./vendor/firebase-firestore-compat.js",
 ];
 
 self.addEventListener("install", (event) => {
@@ -35,6 +38,10 @@ self.addEventListener("activate", (event) => {
 // En parallèle, on va chercher une version plus fraîche sur le réseau pour la prochaine visite.
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  // Ne jamais mettre en cache les appels vers Firebase (auth / Firestore) : ce sont des
+  // requêtes réseau temps réel (connexion, synchronisation) qui ne doivent pas être rejouées
+  // depuis un cache, sous peine de casser la connexion ou la synchro.
+  if (new URL(event.request.url).origin !== self.location.origin) return;
 
   event.respondWith(
     caches.match(event.request).then((cached) => {

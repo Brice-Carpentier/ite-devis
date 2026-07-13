@@ -16,13 +16,42 @@
 </head>
 <body>
 
+<div id="sync-banner" class="sync-banner" hidden>
+  <span id="sync-banner-text"></span>
+  <button id="sync-banner-close" class="btn btn-ghost btn-small">✕</button>
+</div>
+
 <div id="app">
 
+  <!-- ===== ECRAN CONNEXION ===== -->
+  <section id="view-auth" class="view" hidden>
+    <div class="auth-box card">
+      <h1>ITE Devis</h1>
+      <p class="modal-hint">Connecte-toi pour retrouver tes fiches clients sur tous tes appareils (synchronisation automatique).</p>
+      <label>Email
+        <input type="email" id="auth-email" autocomplete="username" placeholder="toi@exemple.fr">
+      </label>
+      <label>Mot de passe
+        <input type="password" id="auth-password" autocomplete="current-password" placeholder="6 caractères minimum">
+      </label>
+      <p id="auth-error" class="auth-error" hidden></p>
+      <div class="auth-actions">
+        <button id="auth-signin" class="btn btn-primary btn-lg">Se connecter</button>
+        <button id="auth-signup" class="btn btn-ghost btn-lg">Créer un compte</button>
+      </div>
+      <button id="auth-reset" class="btn btn-ghost btn-small">Mot de passe oublié ?</button>
+    </div>
+  </section>
+
   <!-- ===== ECRAN LISTE CLIENTS ===== -->
-  <section id="view-clients" class="view">
+  <section id="view-clients" class="view" hidden>
     <header class="topbar">
       <h1>Mes Chantiers ITE</h1>
-      <button id="btn-new-client" class="btn btn-primary btn-lg">+ Nouveau client</button>
+      <div class="topbar-actions">
+        <span id="auth-user-email" class="auth-user-email"></span>
+        <button id="btn-sign-out" class="btn btn-ghost btn-small">Déconnexion</button>
+        <button id="btn-new-client" class="btn btn-primary btn-lg">+ Nouveau client</button>
+      </div>
     </header>
 
     <div class="search-row">
@@ -256,6 +285,9 @@
 
 <script src="vendor/html2canvas.min.js"></script>
 <script src="vendor/jspdf.umd.min.js"></script>
+<script src="vendor/firebase-app-compat.js"></script>
+<script src="vendor/firebase-auth-compat.js"></script>
+<script src="vendor/firebase-firestore-compat.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
