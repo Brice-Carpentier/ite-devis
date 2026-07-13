@@ -1,5 +1,5 @@
 // Incrémenter ce numéro à chaque mise à jour de l'appli pour forcer le rechargement du cache.
-const CACHE_NAME = "ite-devis-cache-v9";
+const CACHE_NAME = "ite-devis-cache-v10";
 
 const APP_SHELL = [
   "./",

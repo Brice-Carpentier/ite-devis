@@ -71,20 +71,64 @@
     </header>
 
     <div class="client-form card">
-      <div class="form-grid">
-        <label>Nom du client
-          <input type="text" id="f-nom" placeholder="Nom Prénom">
-        </label>
-        <label>Téléphone
-          <input type="tel" id="f-tel" placeholder="06 00 00 00 00">
-        </label>
-        <label>Adresse du chantier
-          <input type="text" id="f-adresse" placeholder="Adresse">
-        </label>
-        <label>Date du rendez-vous
-          <input type="date" id="f-date">
-        </label>
+      <div class="form-collapsible">
+        <button type="button" class="form-collapsible-toggle" data-toggle-target="section-contact-body">📇 Contact <span class="chevron">▾</span></button>
+        <div class="form-collapsible-body" id="section-contact-body">
+          <div class="form-grid">
+            <label>Nom
+              <input type="text" id="f-nom" placeholder="Nom">
+            </label>
+            <label>Prénom
+              <input type="text" id="f-prenom" placeholder="Prénom">
+            </label>
+            <label>Adresse chantier
+              <input type="text" id="f-adresse-chantier" placeholder="Adresse du chantier">
+            </label>
+            <label>Adresse facturation
+              <input type="text" id="f-adresse-facturation" placeholder="Si différente de l'adresse chantier">
+            </label>
+            <label>Code postal
+              <input type="text" id="f-code-postal" inputmode="numeric" placeholder="Ex: 75001">
+            </label>
+            <label>Téléphone
+              <input type="tel" id="f-tel" placeholder="06 00 00 00 00">
+            </label>
+            <label>Mail
+              <input type="email" id="f-email" placeholder="nom@exemple.fr">
+            </label>
+            <label>Date de visite technique
+              <input type="date" id="f-date-visite">
+            </label>
+          </div>
+        </div>
       </div>
+
+      <div class="form-collapsible">
+        <button type="button" class="form-collapsible-toggle" data-toggle-target="section-aides-body">💶 Aides <span class="chevron">▸</span></button>
+        <div class="form-collapsible-body" id="section-aides-body" hidden>
+          <div class="form-grid">
+            <label>M² habitable
+              <input type="number" id="f-m2-habitable" min="0" step="0.01" inputmode="decimal">
+            </label>
+            <label>Année de construction
+              <input type="number" id="f-annee-construction" min="1800" max="2100" step="1" inputmode="numeric">
+            </label>
+            <label>Système de chauffage
+              <input type="text" id="f-systeme-chauffage" placeholder="Ex: Chaudière gaz, PAC...">
+            </label>
+            <label>Personnes à charge
+              <input type="number" id="f-personnes-charge" min="0" step="1" inputmode="numeric">
+            </label>
+            <label>RFR
+              <input type="number" id="f-rfr" min="0" step="1" inputmode="numeric" placeholder="Revenu Fiscal de Référence (€)">
+            </label>
+            <label>Type d'aides
+              <input type="text" id="f-type-aides" placeholder="Ex: MaPrimeRénov, CEE...">
+            </label>
+          </div>
+        </div>
+      </div>
+
       <label class="notes-label">Notes
         <textarea id="f-notes" rows="2" placeholder="Remarques, contraintes d'accès, isolant choisi..."></textarea>
       </label>

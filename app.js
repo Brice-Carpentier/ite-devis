@@ -594,10 +594,29 @@
 
   const clientTitle = document.getElementById("client-title");
   const fNom = document.getElementById("f-nom");
+  const fPrenom = document.getElementById("f-prenom");
+  const fAdresseChantier = document.getElementById("f-adresse-chantier");
+  const fAdresseFacturation = document.getElementById("f-adresse-facturation");
+  const fCodePostal = document.getElementById("f-code-postal");
   const fTel = document.getElementById("f-tel");
-  const fAdresse = document.getElementById("f-adresse");
-  const fDate = document.getElementById("f-date");
+  const fEmail = document.getElementById("f-email");
+  const fDateVisite = document.getElementById("f-date-visite");
   const fNotes = document.getElementById("f-notes");
+  const fM2Habitable = document.getElementById("f-m2-habitable");
+  const fAnneeConstruction = document.getElementById("f-annee-construction");
+  const fSystemeChauffage = document.getElementById("f-systeme-chauffage");
+  const fPersonnesCharge = document.getElementById("f-personnes-charge");
+  const fRfr = document.getElementById("f-rfr");
+  const fTypeAides = document.getElementById("f-type-aides");
+
+  document.querySelectorAll(".form-collapsible-toggle").forEach((btn) => {
+    const body = document.getElementById(btn.dataset.toggleTarget);
+    const chevron = btn.querySelector(".chevron");
+    btn.addEventListener("click", () => {
+      body.hidden = !body.hidden;
+      chevron.textContent = body.hidden ? "▸" : "▾";
+    });
+  });
 
   const facadeListEl = document.getElementById("facade-list");
   const emptyFacadesEl = document.getElementById("empty-facades");
@@ -757,7 +776,9 @@
   function renderClientList() {
     const term = clientSearch.value.trim().toLowerCase();
     const clients = [...Store.data]
-      .filter((c) => !term || c.nom.toLowerCase().includes(term) || (c.adresse || "").toLowerCase().includes(term))
+      .filter((c) => !term
+        || clientFullName(c).toLowerCase().includes(term)
+        || clientAdresseChantier(c).toLowerCase().includes(term))
       .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 
     clientListEl.innerHTML = "";
@@ -765,12 +786,14 @@
 
     for (const c of clients) {
       const totals = computeClientTotals(c);
+      const adresse = clientAdresseChantier(c);
+      const dateVisite = clientDateVisite(c);
       const div = document.createElement("div");
       div.className = "client-item";
       div.innerHTML = `
         <div>
-          <div class="ci-name">${escapeHtml(c.nom || "(Sans nom)")}</div>
-          <div class="ci-sub">${escapeHtml(c.adresse || "Adresse non renseignée")}${c.dateRdv ? " · RDV " + formatDate(c.dateRdv) : ""}</div>
+          <div class="ci-name">${escapeHtml(clientFullName(c))}</div>
+          <div class="ci-sub">${escapeHtml(adresse || "Adresse non renseignée")}${dateVisite ? " · Visite technique " + formatDate(dateVisite) : ""}</div>
           <div class="ci-sub">${fmt(totals.nette, "m²")} nette · ${c.facades.length} façade(s)</div>
         </div>
         <div class="ci-arrow">›</div>
@@ -792,6 +815,23 @@
     return div.innerHTML;
   }
 
+  // Nom affiché : "Prénom Nom". Compatible avec les fiches créées avant la séparation
+  // nom/prénom (client.nom contenait alors le nom complet, client.prenom est vide).
+  function clientFullName(client) {
+    const parts = [client.prenom, client.nom].map((s) => (s || "").trim()).filter(Boolean);
+    return parts.join(" ") || "(Sans nom)";
+  }
+
+  // Compatibilité : anciennes fiches avec `adresse`/`dateRdv` avant le renommage en
+  // `adresseChantier`/`dateVisiteTechnique`.
+  function clientAdresseChantier(client) {
+    return client.adresseChantier || client.adresse || "";
+  }
+
+  function clientDateVisite(client) {
+    return client.dateVisiteTechnique || client.dateRdv || "";
+  }
+
   // ---------- Render: fiche client ----------
 
   function renderClientView() {
@@ -800,12 +840,22 @@
 
     migrateClientExtras(client);
 
-    clientTitle.textContent = client.nom || "Nouvelle fiche client";
+    clientTitle.textContent = clientFullName(client) !== "(Sans nom)" ? clientFullName(client) : "Nouvelle fiche client";
     fNom.value = client.nom || "";
+    fPrenom.value = client.prenom || "";
+    fAdresseChantier.value = clientAdresseChantier(client);
+    fAdresseFacturation.value = client.adresseFacturation || "";
+    fCodePostal.value = client.codePostal || "";
     fTel.value = client.telephone || "";
-    fAdresse.value = client.adresse || "";
-    fDate.value = client.dateRdv || "";
+    fEmail.value = client.email || "";
+    fDateVisite.value = clientDateVisite(client);
     fNotes.value = client.notes || "";
+    fM2Habitable.value = client.m2Habitable || "";
+    fAnneeConstruction.value = client.anneeConstruction || "";
+    fSystemeChauffage.value = client.systemeChauffage || "";
+    fPersonnesCharge.value = client.personnesCharge || "";
+    fRfr.value = client.rfr || "";
+    fTypeAides.value = client.typeAides || "";
 
     renderFacadeList(client);
     renderItiZoneList(client);
@@ -1259,16 +1309,30 @@
     const client = Store.getClient(currentClientId);
     if (!client) return;
     client.nom = fNom.value;
+    client.prenom = fPrenom.value;
+    client.adresseChantier = fAdresseChantier.value;
+    client.adresseFacturation = fAdresseFacturation.value;
+    client.codePostal = fCodePostal.value;
     client.telephone = fTel.value;
-    client.adresse = fAdresse.value;
-    client.dateRdv = fDate.value;
+    client.email = fEmail.value;
+    client.dateVisiteTechnique = fDateVisite.value;
     client.notes = fNotes.value;
+    client.m2Habitable = fM2Habitable.value;
+    client.anneeConstruction = fAnneeConstruction.value;
+    client.systemeChauffage = fSystemeChauffage.value;
+    client.personnesCharge = fPersonnesCharge.value;
+    client.rfr = fRfr.value;
+    client.typeAides = fTypeAides.value;
     client.updatedAt = Date.now();
     Store.upsertClient(client);
-    clientTitle.textContent = client.nom || "Nouvelle fiche client";
+    const name = clientFullName(client);
+    clientTitle.textContent = name !== "(Sans nom)" ? name : "Nouvelle fiche client";
   }
 
-  [fNom, fTel, fAdresse, fDate, fNotes].forEach((el) => {
+  [
+    fNom, fPrenom, fAdresseChantier, fAdresseFacturation, fCodePostal, fTel, fEmail, fDateVisite, fNotes,
+    fM2Habitable, fAnneeConstruction, fSystemeChauffage, fPersonnesCharge, fRfr, fTypeAides,
+  ].forEach((el) => {
     el.addEventListener("input", persistClientFields);
     el.addEventListener("change", persistClientFields);
   });
@@ -1279,10 +1343,20 @@
     const client = {
       id: uid(),
       nom: "",
+      prenom: "",
+      adresseChantier: "",
+      adresseFacturation: "",
+      codePostal: "",
       telephone: "",
-      adresse: "",
-      dateRdv: "",
+      email: "",
+      dateVisiteTechnique: "",
       notes: "",
+      m2Habitable: "",
+      anneeConstruction: "",
+      systemeChauffage: "",
+      personnesCharge: "",
+      rfr: "",
+      typeAides: "",
       facades: [],
       extras: {},
       prix: defaultClientPrix(),
@@ -1300,7 +1374,7 @@
   document.getElementById("btn-delete-client").addEventListener("click", () => {
     const client = Store.getClient(currentClientId);
     if (!client) return;
-    if (confirm(`Supprimer définitivement la fiche de "${client.nom || "ce client"}" ?`)) {
+    if (confirm(`Supprimer définitivement la fiche de "${clientFullName(client)}" ?`)) {
       Store.deleteClient(currentClientId);
       showClientsView();
     }
@@ -2701,15 +2775,19 @@
   // ---------- Récapitulatif imprimable (PDF via impression du navigateur) ----------
 
   function printHeaderHtml(client, title) {
+    const adresse = clientAdresseChantier(client);
+    const dateVisite = clientDateVisite(client);
     return `
       <div class="print-header">
         <div>
           <h1>${escapeHtml(title)}</h1>
           <div class="print-client-info">
-            <strong>${escapeHtml(client.nom || "Client")}</strong><br>
-            ${client.adresse ? escapeHtml(client.adresse) + "<br>" : ""}
+            <strong>${escapeHtml(clientFullName(client))}</strong><br>
+            ${adresse ? escapeHtml(adresse) + "<br>" : ""}
+            ${client.codePostal ? escapeHtml(client.codePostal) + "<br>" : ""}
             ${client.telephone ? "Tél : " + escapeHtml(client.telephone) + "<br>" : ""}
-            ${client.dateRdv ? "Date du RDV : " + formatDate(client.dateRdv) : ""}
+            ${client.email ? "Mail : " + escapeHtml(client.email) + "<br>" : ""}
+            ${dateVisite ? "Visite technique : " + formatDate(dateVisite) : ""}
           </div>
         </div>
         <img src="icons/icon-512.png" alt="Logo">
@@ -2912,7 +2990,7 @@
         heightLeft -= pageHeight;
       }
 
-      const safeName = (client.nom || "client").replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "") || "client";
+      const safeName = clientFullName(client).replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "") || "client";
       pdf.save(`${filenamePrefix}_${safeName}.pdf`);
     } catch (err) {
       console.error("Échec de génération du PDF", err);

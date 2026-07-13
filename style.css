@@ -142,6 +142,26 @@ label {
 
 .notes-label { margin-top: 4px; }
 
+.form-collapsible { margin-bottom: 16px; }
+.form-collapsible:last-of-type { margin-bottom: 4px; }
+.form-collapsible-toggle {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  background: none;
+  border: none;
+  border-bottom: 2px solid var(--border);
+  padding: 4px 0 10px;
+  margin-bottom: 14px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.form-collapsible-toggle .chevron { margin-left: auto; color: var(--blue); font-weight: 700; }
+.form-collapsible-body[hidden] { display: none; }
+
 /* client list */
 .client-list { display: flex; flex-direction: column; gap: 10px; }
 
