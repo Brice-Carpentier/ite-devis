@@ -2435,17 +2435,16 @@
     if (sketchSnapPoints.length > 400) sketchSnapPoints.splice(0, sketchSnapPoints.length - 400);
   }
 
-  function isSamePoint(p1, p2, tol) {
-    return Math.hypot(p1.x - p2.x, p1.y - p2.y) < (tol || SNAP_THRESHOLD);
-  }
-
   // Suivi d'un contour en cours de tracé (plusieurs traits "Ligne droite" mis bout à bout) :
   // dès que le dernier trait revient sur le tout premier point, on calcule la surface réelle
   // à partir des cotes saisies sur chaque trait (échelle moyenne cote réelle / longueur pixel).
-  let currentPolyPath = null; // { points: [{x,y}...], cotes: [nombre|null, ...] }
+  // Tous les traits "Ligne droite" de la session, quel que soit l'ordre/sens dans lequel
+  // ils ont été dessinés. Dès qu'un nouveau trait referme une boucle avec d'autres traits
+  // déjà posés (peu importe l'ordre), la surface est calculée automatiquement.
+  let sketchLineSegments = []; // [{ a:{x,y}, b:{x,y}, cote:number|null }, ...]
 
-  function resetPolyPath() {
-    currentPolyPath = null;
+  function resetLineSegments() {
+    sketchLineSegments = [];
   }
 
   function polygonPixelArea(points) {
@@ -2456,6 +2455,50 @@
       sum += p1.x * p2.y - p2.x * p1.y;
     }
     return Math.abs(sum) / 2;
+  }
+
+  function pointKey(p) {
+    return Math.round(p.x) + "," + Math.round(p.y);
+  }
+
+  // Recherche (DFS) un chemin qui referme une boucle en repartant du trait qu'on vient de
+  // tracer, en empruntant n'importe quels autres traits déjà posés, dans n'importe quel ordre.
+  function findClosedLoop(newSeg) {
+    const adj = new Map();
+    function addToAdj(seg) {
+      const ka = pointKey(seg.a), kb = pointKey(seg.b);
+      if (!adj.has(ka)) adj.set(ka, []);
+      if (!adj.has(kb)) adj.set(kb, []);
+      adj.get(ka).push({ to: seg.b, toKey: kb, seg });
+      adj.get(kb).push({ to: seg.a, toKey: ka, seg });
+    }
+    for (const seg of sketchLineSegments) addToAdj(seg);
+
+    const startKey = pointKey(newSeg.a);
+    const visited = new Set([newSeg]);
+    const pathPoints = [newSeg.a, newSeg.b];
+    const pathCotes = [newSeg.cote];
+
+    function dfs(currentKey) {
+      if (currentKey === startKey && pathPoints.length >= 4) return true;
+      const neighbors = adj.get(currentKey) || [];
+      for (const edge of neighbors) {
+        if (visited.has(edge.seg)) continue;
+        visited.add(edge.seg);
+        pathPoints.push(edge.to);
+        pathCotes.push(edge.seg.cote);
+        if (dfs(edge.toKey)) return true;
+        pathPoints.pop();
+        pathCotes.pop();
+        visited.delete(edge.seg);
+      }
+      return false;
+    }
+
+    if (dfs(pointKey(newSeg.b))) {
+      return { vertices: pathPoints, cotes: pathCotes, usedSegs: Array.from(visited) };
+    }
+    return null;
   }
 
   function shapeCornerPoints(mode, shape) {
@@ -2621,7 +2664,7 @@
     sketchFacade = facade;
     undoStack = [];
     sketchSnapPoints = [];
-    resetPolyPath();
+    resetLineSegments();
     sketchOverlay.hidden = false;
     document.body.style.overflow = "hidden";
 
@@ -2791,24 +2834,19 @@
         if (coteText) drawLineLabel(sketchCtx, coteText, strokeStart, lastMovePoint, currentColor);
         const coteValue = parseFloat((coteText || "").replace(",", "."));
 
-        // Continuité du contour : ce trait démarre-t-il là où le précédent s'est arrêté ?
-        const continuesPath = currentPolyPath && isSamePoint(strokeStart, currentPolyPath.points[currentPolyPath.points.length - 1]);
-        if (!continuesPath) {
-          currentPolyPath = { points: [strokeStart, lastMovePoint], cotes: [coteValue > 0 ? coteValue : null] };
-        } else {
-          currentPolyPath.points.push(lastMovePoint);
-          currentPolyPath.cotes.push(coteValue > 0 ? coteValue : null);
-        }
+        const newSeg = { a: strokeStart, b: lastMovePoint, cote: coteValue > 0 ? coteValue : null };
+        sketchLineSegments.push(newSeg);
 
-        // Fermeture détectée : le dernier point rejoint le tout premier point du contour.
-        const path = currentPolyPath;
-        if (path.points.length >= 4 && isSamePoint(path.points[path.points.length - 1], path.points[0])) {
-          const vertices = path.points.slice(0, -1);
+        // Peu importe l'ordre ou le sens dans lequel les traits ont été dessinés : on cherche
+        // si celui-ci referme une boucle avec d'autres traits déjà posés.
+        const loop = findClosedLoop(newSeg);
+        if (loop) {
+          const vertices = loop.vertices.slice(0, -1);
           const knownScales = [];
           for (let i = 0; i < vertices.length; i++) {
-            const cote = path.cotes[i];
+            const cote = loop.cotes[i];
             if (cote) {
-              const pixelLen = Math.hypot(path.points[i + 1].x - vertices[i].x, path.points[i + 1].y - vertices[i].y) || 1;
+              const pixelLen = Math.hypot(loop.vertices[i + 1].x - vertices[i].x, loop.vertices[i + 1].y - vertices[i].y) || 1;
               knownScales.push(cote / pixelLen);
             }
           }
@@ -2835,11 +2873,12 @@
               const cy = vertices.reduce((s, p) => s + p.y, 0) / vertices.length;
               const suffix = zoneKind.kind === "deduit" ? " (déduit)" : zoneKind.kind === "autre" ? ` (${zoneKind.label})` : "";
               drawFreeText(sketchCtx, `${fmt(round2(realArea), "m²")}${suffix}`, cx - 20, cy, currentColor);
+
+              sketchLineSegments = sketchLineSegments.filter((s) => loop.usedSegs.indexOf(s) === -1);
             }
           } else if (knownScales.length === 0) {
             alert("Forme refermée, mais aucune côte n'a été renseignée sur ses traits : impossible de calculer la surface. Redessinez en indiquant au moins une longueur.");
           }
-          currentPolyPath = null;
         }
       }
     } else if (sketchMode === "texte" && strokeStart) {
@@ -2868,7 +2907,7 @@
   ];
   modeButtons.forEach(({ btn, mode }) => {
     btn.addEventListener("click", () => {
-      if (mode !== "ligne") resetPolyPath();
+      if (mode !== "ligne") resetLineSegments();
       sketchMode = mode;
       modeButtons.forEach(({ btn: b }) => b.classList.remove("active"));
       btn.classList.add("active");
@@ -2909,7 +2948,7 @@
     sketchCtx.fillStyle = "#ffffff";
     sketchCtx.fillRect(0, 0, rect.width, rect.height);
     sketchSnapPoints = [];
-    resetPolyPath();
+    resetLineSegments();
   });
 
   sketchClose.addEventListener("click", closeSketchEditor);
