@@ -403,6 +403,7 @@
   }
 
   function zoneArea(z) {
+    if (z.type === "polygone") return z.area || 0;
     return z.type === "triangle" ? (z.width * z.height) / 2 : z.width * z.height;
   }
 
@@ -874,7 +875,7 @@
   tabInterieurBtn.addEventListener("click", () => setActiveSection("interieur"));
 
   const ZONE_KIND_LABELS = { ajout: "Ajout", deduit: "Déduit", autre: "Autre" };
-  const ZONE_TYPE_ICONS = { rectangle: "▭", triangle: "🔺" };
+  const ZONE_TYPE_ICONS = { rectangle: "▭", triangle: "🔺", polygone: "⬠" };
 
   function facadeZonesHtml(facade) {
     const zones = facade.zones || [];
@@ -899,7 +900,7 @@
         <div class="zone-item">
           <div class="zone-info">
             <span class="tag ${kindClass}">${ZONE_TYPE_ICONS[z.type]} ${kindLabel}</span>
-            ${z.width.toFixed(2)} × ${z.height.toFixed(2)} m — ${fmt(area, "m²")}
+            ${z.type === "polygone" ? `Forme libre (croquis) — ${fmt(area, "m²")}` : `${z.width.toFixed(2)} × ${z.height.toFixed(2)} m — ${fmt(area, "m²")}`}
           </div>
           ${z.kind === "autre" ? `
           <div class="extra-price-controls">
@@ -2434,6 +2435,29 @@
     if (sketchSnapPoints.length > 400) sketchSnapPoints.splice(0, sketchSnapPoints.length - 400);
   }
 
+  function isSamePoint(p1, p2, tol) {
+    return Math.hypot(p1.x - p2.x, p1.y - p2.y) < (tol || SNAP_THRESHOLD);
+  }
+
+  // Suivi d'un contour en cours de tracé (plusieurs traits "Ligne droite" mis bout à bout) :
+  // dès que le dernier trait revient sur le tout premier point, on calcule la surface réelle
+  // à partir des cotes saisies sur chaque trait (échelle moyenne cote réelle / longueur pixel).
+  let currentPolyPath = null; // { points: [{x,y}...], cotes: [nombre|null, ...] }
+
+  function resetPolyPath() {
+    currentPolyPath = null;
+  }
+
+  function polygonPixelArea(points) {
+    let sum = 0;
+    for (let i = 0; i < points.length; i++) {
+      const p1 = points[i];
+      const p2 = points[(i + 1) % points.length];
+      sum += p1.x * p2.y - p2.x * p1.y;
+    }
+    return Math.abs(sum) / 2;
+  }
+
   function shapeCornerPoints(mode, shape) {
     if (mode === "triangle") {
       return [
@@ -2597,6 +2621,7 @@
     sketchFacade = facade;
     undoStack = [];
     sketchSnapPoints = [];
+    resetPolyPath();
     sketchOverlay.hidden = false;
     document.body.style.overflow = "hidden";
 
@@ -2764,6 +2789,58 @@
         addSnapPoints([strokeStart, lastMovePoint]);
         const coteText = window.prompt("Longueur de ce trait (ex: 3.50) — laissez vide pour ne pas coter :", "");
         if (coteText) drawLineLabel(sketchCtx, coteText, strokeStart, lastMovePoint, currentColor);
+        const coteValue = parseFloat((coteText || "").replace(",", "."));
+
+        // Continuité du contour : ce trait démarre-t-il là où le précédent s'est arrêté ?
+        const continuesPath = currentPolyPath && isSamePoint(strokeStart, currentPolyPath.points[currentPolyPath.points.length - 1]);
+        if (!continuesPath) {
+          currentPolyPath = { points: [strokeStart, lastMovePoint], cotes: [coteValue > 0 ? coteValue : null] };
+        } else {
+          currentPolyPath.points.push(lastMovePoint);
+          currentPolyPath.cotes.push(coteValue > 0 ? coteValue : null);
+        }
+
+        // Fermeture détectée : le dernier point rejoint le tout premier point du contour.
+        const path = currentPolyPath;
+        if (path.points.length >= 4 && isSamePoint(path.points[path.points.length - 1], path.points[0])) {
+          const vertices = path.points.slice(0, -1);
+          const knownScales = [];
+          for (let i = 0; i < vertices.length; i++) {
+            const cote = path.cotes[i];
+            if (cote) {
+              const pixelLen = Math.hypot(path.points[i + 1].x - vertices[i].x, path.points[i + 1].y - vertices[i].y) || 1;
+              knownScales.push(cote / pixelLen);
+            }
+          }
+          if (knownScales.length > 0 && sketchClient && sketchFacade) {
+            const scale = knownScales.reduce((s, v) => s + v, 0) / knownScales.length;
+            const realArea = polygonPixelArea(vertices) * scale * scale;
+
+            const zoneKind = askZoneKind();
+            if (zoneKind) {
+              if (!sketchFacade.zones) sketchFacade.zones = [];
+              sketchFacade.zones.push({
+                id: uid(),
+                type: "polygone",
+                area: round2(realArea),
+                kind: zoneKind.kind,
+                label: zoneKind.label,
+                prix: 0,
+                tva: DEFAULT_TVA,
+              });
+              sketchClient.updatedAt = Date.now();
+              Store.upsertClient(sketchClient);
+
+              const cx = vertices.reduce((s, p) => s + p.x, 0) / vertices.length;
+              const cy = vertices.reduce((s, p) => s + p.y, 0) / vertices.length;
+              const suffix = zoneKind.kind === "deduit" ? " (déduit)" : zoneKind.kind === "autre" ? ` (${zoneKind.label})` : "";
+              drawFreeText(sketchCtx, `${fmt(round2(realArea), "m²")}${suffix}`, cx - 20, cy, currentColor);
+            }
+          } else if (knownScales.length === 0) {
+            alert("Forme refermée, mais aucune côte n'a été renseignée sur ses traits : impossible de calculer la surface. Redessinez en indiquant au moins une longueur.");
+          }
+          currentPolyPath = null;
+        }
       }
     } else if (sketchMode === "texte" && strokeStart) {
       const text = window.prompt("Texte à ajouter :", "");
@@ -2791,6 +2868,7 @@
   ];
   modeButtons.forEach(({ btn, mode }) => {
     btn.addEventListener("click", () => {
+      if (mode !== "ligne") resetPolyPath();
       sketchMode = mode;
       modeButtons.forEach(({ btn: b }) => b.classList.remove("active"));
       btn.classList.add("active");
@@ -2830,6 +2908,8 @@
     const rect = sketchCanvas.getBoundingClientRect();
     sketchCtx.fillStyle = "#ffffff";
     sketchCtx.fillRect(0, 0, rect.width, rect.height);
+    sketchSnapPoints = [];
+    resetPolyPath();
   });
 
   sketchClose.addEventListener("click", closeSketchEditor);
