@@ -2409,6 +2409,47 @@
   let strokeStart = null;
   let strokeBaseImageData = null;
 
+  // ---------- Accrochage aux points (snapping) ----------
+  // Permet de refermer précisément des formes complexes (pignons irréguliers, décrochés...)
+  // dessinées trait par trait : en s'approchant d'un point déjà posé, le tracé s'y accroche.
+  const SNAP_THRESHOLD = 18;
+  const SNAPPABLE_MODES = ["ligne", "rectangle", "triangle", "fenetre", "porte"];
+  let sketchSnapPoints = [];
+
+  function snapPoint(pt) {
+    let best = null;
+    let bestDist = SNAP_THRESHOLD;
+    for (const p of sketchSnapPoints) {
+      const d = Math.hypot(pt.x - p.x, pt.y - p.y);
+      if (d < bestDist) {
+        bestDist = d;
+        best = p;
+      }
+    }
+    return best || pt;
+  }
+
+  function addSnapPoints(points) {
+    sketchSnapPoints.push(...points);
+    if (sketchSnapPoints.length > 400) sketchSnapPoints.splice(0, sketchSnapPoints.length - 400);
+  }
+
+  function shapeCornerPoints(mode, shape) {
+    if (mode === "triangle") {
+      return [
+        { x: shape.x, y: shape.y + shape.h },
+        { x: shape.x + shape.w, y: shape.y + shape.h },
+        { x: shape.x + shape.w / 2, y: shape.y },
+      ];
+    }
+    return [
+      { x: shape.x, y: shape.y },
+      { x: shape.x + shape.w, y: shape.y },
+      { x: shape.x, y: shape.y + shape.h },
+      { x: shape.x + shape.w, y: shape.y + shape.h },
+    ];
+  }
+
   function drawRectShape(ctx, x0, y0, x1, y1, color) {
     const x = Math.min(x0, x1), y = Math.min(y0, y1);
     const w = Math.abs(x1 - x0), h = Math.abs(y1 - y0);
@@ -2533,6 +2574,7 @@
     sketchClient = client;
     sketchFacade = facade;
     undoStack = [];
+    sketchSnapPoints = [];
     sketchOverlay.hidden = false;
     document.body.style.overflow = "hidden";
 
@@ -2581,7 +2623,8 @@
   sketchCanvas.addEventListener("pointerdown", (e) => {
     drawing = true;
     pushUndoSnapshot();
-    const point = getPoint(e);
+    let point = getPoint(e);
+    if (SNAPPABLE_MODES.includes(sketchMode)) point = snapPoint(point);
     lastPoint = point;
     lastMovePoint = point;
     strokeStart = point;
@@ -2594,7 +2637,8 @@
   sketchCanvas.addEventListener("pointermove", (e) => {
     if (!drawing) return;
     if (sketchMode === "texte") return;
-    const point = getPoint(e);
+    let point = getPoint(e);
+    if (SNAPPABLE_MODES.includes(sketchMode)) point = snapPoint(point);
     lastMovePoint = point;
     sketchCtx.strokeStyle = isErasing ? "#ffffff" : currentColor;
     sketchCtx.lineWidth = isErasing ? 24 : 3.5;
@@ -2653,6 +2697,7 @@
           w: Math.abs(lastMovePoint.x - strokeStart.x),
           h: Math.abs(lastMovePoint.y - strokeStart.y),
         };
+        addSnapPoints(shapeCornerPoints(sketchMode, shape));
         const widthText = window.prompt(dimPrompts.width, "");
         const heightText = window.prompt(dimPrompts.height, "");
         const isZoneMode = ZONE_MODES.includes(sketchMode);
@@ -2691,6 +2736,9 @@
           drawShapeDimensions(sketchCtx, shape, widthText, heightText, currentColor, sketchMode === "triangle");
         }
       }
+    } else if (sketchMode === "ligne" && strokeStart && lastMovePoint) {
+      const moved = Math.abs(lastMovePoint.x - strokeStart.x) > 4 || Math.abs(lastMovePoint.y - strokeStart.y) > 4;
+      if (moved) addSnapPoints([strokeStart, lastMovePoint]);
     } else if (sketchMode === "texte" && strokeStart) {
       const text = window.prompt("Texte à ajouter :", "");
       if (text) drawFreeText(sketchCtx, text, strokeStart.x, strokeStart.y, currentColor);
