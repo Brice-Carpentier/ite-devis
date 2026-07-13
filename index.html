@@ -137,7 +137,8 @@
         <span>HT <strong id="total-extras-ht">0,00 €</strong> &nbsp;/&nbsp; TTC <strong id="total-extras-ttc">0,00 €</strong></span>
       </div>
       <div class="print-row">
-        <button id="btn-print-ite" class="btn btn-primary btn-lg">🖨️ Récap PDF Extérieur</button>
+        <button id="btn-print-ite" class="btn btn-primary btn-lg">🖨️ Imprimer Extérieur</button>
+        <button id="btn-download-ite" class="btn btn-primary btn-lg">📥 Télécharger PDF Extérieur</button>
       </div>
     </div>
     </div>
@@ -162,7 +163,8 @@
           <span>HT <strong id="total-iti-extras-ht">0,00 €</strong> &nbsp;/&nbsp; TTC <strong id="total-iti-extras-ttc">0,00 €</strong></span>
         </div>
         <div class="print-row">
-          <button id="btn-print-iti" class="btn btn-primary btn-lg">🖨️ Récap PDF Intérieur</button>
+          <button id="btn-print-iti" class="btn btn-primary btn-lg">🖨️ Imprimer Intérieur</button>
+          <button id="btn-download-iti" class="btn btn-primary btn-lg">📥 Télécharger PDF Intérieur</button>
         </div>
       </div>
     </div>
@@ -252,6 +254,8 @@
 <!-- ===== ZONE D'IMPRESSION (récap PDF) ===== -->
 <div id="print-area"></div>
 
+<script src="vendor/html2canvas.min.js"></script>
+<script src="vendor/jspdf.umd.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

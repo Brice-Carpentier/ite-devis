@@ -1,5 +1,5 @@
 // Incrémenter ce numéro à chaque mise à jour de l'appli pour forcer le rechargement du cache.
-const CACHE_NAME = "ite-devis-cache-v6";
+const CACHE_NAME = "ite-devis-cache-v8";
 
 const APP_SHELL = [
   "./",
@@ -9,6 +9,8 @@ const APP_SHELL = [
   "./manifest.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
+  "./vendor/html2canvas.min.js",
+  "./vendor/jspdf.umd.min.js",
 ];
 
 self.addEventListener("install", (event) => {

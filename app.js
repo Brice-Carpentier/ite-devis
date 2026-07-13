@@ -95,6 +95,8 @@
     { key: "peinture_sous_balcon", label: "Peinture sous balcon", unit: "unité" },
     { key: "peinture_casquette", label: "Peinture sur casquette de façade", unit: "unité" },
     { key: "peinture_tete_cheminee", label: "Peinture tête de cheminée", unit: "unité" },
+    { key: "luminaire", label: "Luminaires", unit: "unité" },
+    { key: "point_eau_rallonge", label: "Point d'eau à rallonger", unit: "unité" },
   ];
 
   const DEFAULT_TVA = 10;
@@ -128,6 +130,13 @@
     return e;
   }
 
+  // Éléments complémentaires "autres" saisis librement par l'utilisateur (hors catalogue),
+  // rattachés à chaque façade (`facade.customExtras`).
+  function getFacadeCustomExtras(facade) {
+    if (!facade.customExtras) facade.customExtras = [];
+    return facade.customExtras;
+  }
+
   function htTtc(ht, tva) {
     return { ht, ttc: ht * (1 + (tva || 0) / 100) };
   }
@@ -146,6 +155,13 @@
       if (z.kind !== "autre") continue;
       const lineHt = zoneArea(z) * (z.prix || 0);
       const line = htTtc(lineHt, z.tva);
+      ht += line.ht;
+      ttc += line.ttc;
+    }
+    // Éléments complémentaires "autres" saisis librement (hors catalogue fixe).
+    for (const ex of getFacadeCustomExtras(facade)) {
+      const lineHt = (ex.qty || 0) * (ex.prix || 0);
+      const line = htTtc(lineHt, ex.tva);
       ht += line.ht;
       ttc += line.ttc;
     }
@@ -618,10 +634,16 @@
 
   function facadeZonesHtml(facade) {
     const zones = facade.zones || [];
+    const addBtnHtml = `
+      <div class="add-opening-row">
+        <button class="btn btn-primary btn-small" data-action="add-zone-manual" data-facade-id="${facade.id}">+ Ajouter une côte à la main</button>
+      </div>
+    `;
+
     if (zones.length === 0) {
       // Façade legacy définie par largeur × hauteur avant l'introduction des zones : rien à afficher ici.
-      if (facade.largeur > 0 && facade.hauteur > 0) return "";
-      return `<p class="empty-msg zones-empty">⚠ Aucune zone définie — dessinez un rectangle ou un triangle dans le croquis pour définir la surface de cette façade.</p>`;
+      if (facade.largeur > 0 && facade.hauteur > 0) return addBtnHtml;
+      return `<p class="empty-msg zones-empty">⚠ Aucune zone définie — dessinez un rectangle ou un triangle dans le croquis, ou ajoutez une côte à la main.</p>${addBtnHtml}`;
     }
 
     const rows = zones.map((z) => {
@@ -645,17 +667,19 @@
             </label>
             <span class="extra-subtotal">HT ${fmt(line.ht, "€")} / TTC ${fmt(line.ttc, "€")}</span>
           </div>` : ""}
+          <button class="btn btn-ghost btn-small" data-action="edit-zone" data-facade-id="${facade.id}" data-zone-id="${z.id}">Modifier</button>
           <button class="btn btn-danger btn-small" data-action="delete-zone" data-facade-id="${facade.id}" data-zone-id="${z.id}">✕</button>
         </div>
       `;
     }).join("");
 
-    return `<div class="zone-list">${rows}</div>`;
+    return `<div class="zone-list">${rows}</div>${addBtnHtml}`;
   }
 
   function facadeExtrasHtml(facade) {
     const expanded = expandedFacadeExtras.has(facade.id);
-    const activeCount = EXTRAS_CATALOG.filter((item) => getExtraEntry(facade, item.key).qty > 0).length;
+    const customExtras = getFacadeCustomExtras(facade);
+    const activeCount = EXTRAS_CATALOG.filter((item) => getExtraEntry(facade, item.key).qty > 0).length + customExtras.length;
     const totals = computeFacadeExtrasTotals(facade);
 
     const rows = EXTRAS_CATALOG.map((item) => {
@@ -682,6 +706,19 @@
       `;
     }).join("");
 
+    const customRows = customExtras.map((ex) => {
+      const line = htTtc((ex.qty || 0) * (ex.prix || 0), ex.tva);
+      return `
+        <div class="zone-item">
+          <div class="zone-info">${escapeHtml(ex.label)} (${escapeHtml(ex.unit)}) — ${ex.qty} × ${fmt(ex.prix, "€")} = HT ${fmt(line.ht, "€")} / TTC ${fmt(line.ttc, "€")}</div>
+          <div class="opening-actions">
+            <button class="btn btn-ghost btn-small" data-action="edit-facade-extra" data-facade-id="${facade.id}" data-extra-id="${ex.id}">Modifier</button>
+            <button class="btn btn-danger btn-small" data-action="delete-facade-extra" data-facade-id="${facade.id}" data-extra-id="${ex.id}">✕</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+
     return `
       <div class="facade-extras">
         <button type="button" class="facade-extras-toggle" data-action="toggle-extras" data-facade-id="${facade.id}">
@@ -689,6 +726,10 @@
         </button>
         <div class="facade-extras-body" ${expanded ? "" : "hidden"}>
           ${rows}
+          ${customRows}
+          <div class="add-opening-row">
+            <button class="btn btn-primary btn-small" data-action="add-facade-extra" data-facade-id="${facade.id}">+ Ajouter un élément "autre" (à remplir soi-même)</button>
+          </div>
           <div class="extras-total-row">
             <span>Total éléments (façade)</span>
             <span>HT ${fmt(totals.ht, "€")} &nbsp;/&nbsp; TTC ${fmt(totals.ttc, "€")}</span>
@@ -1210,7 +1251,7 @@
       const systeme = { isolant, finition, bardageType };
 
       if (isNew) {
-        client.facades.push({ id: uid(), nom, largeur: 0, hauteur: 0, ouvertures: [], systeme, extras: {}, photos: [] });
+        client.facades.push({ id: uid(), nom, largeur: 0, hauteur: 0, ouvertures: [], systeme, extras: {}, customExtras: [], photos: [] });
       } else {
         facade.nom = nom;
         facade.systeme = systeme;
@@ -1244,6 +1285,163 @@
     const client = Store.getClient(currentClientId);
     facadeModal(client, null);
   });
+
+  // ---------- Actions: zone de façade (côte saisie à la main, en plus du croquis) ----------
+
+  function zoneManualModal(client, facade, zone) {
+    const isNew = !zone;
+    const title = isNew ? "Nouvelle côte (saisie à la main)" : "Modifier la côte";
+    const type = isNew ? "rectangle" : zone.type;
+    const kind = isNew ? "ajout" : zone.kind;
+
+    const typeButtonsHtml = `
+      <button type="button" data-type="rectangle" class="${type === "rectangle" ? "active" : ""}">▭ Rectangle</button>
+      <button type="button" data-type="triangle" class="${type === "triangle" ? "active" : ""}">🔺 Triangle (pignon)</button>
+    `;
+    const kindButtonsHtml = `
+      <button type="button" data-kind="ajout" class="${kind === "ajout" ? "active" : ""}">Ajout</button>
+      <button type="button" data-kind="deduit" class="${kind === "deduit" ? "active" : ""}">Déduit</button>
+      <button type="button" data-kind="autre" class="${kind === "autre" ? "active" : ""}">Autre (prix à part)</button>
+    `;
+
+    const body = `
+      <p class="modal-hint">Forme de la zone :</p>
+      <div class="type-toggle" id="m-zone-type-toggle">${typeButtonsHtml}</div>
+      <p class="modal-hint">Cette zone est à :</p>
+      <div class="type-toggle" id="m-zone-kind-toggle">${kindButtonsHtml}</div>
+      <div class="field-row">
+        <label>Largeur (m)
+          <input type="number" id="m-zone-largeur" step="0.01" min="0" inputmode="decimal" value="${isNew ? "" : zone.width}">
+        </label>
+        <label>Hauteur (m)
+          <input type="number" id="m-zone-hauteur" step="0.01" min="0" inputmode="decimal" value="${isNew ? "" : zone.height}">
+        </label>
+      </div>
+      <label id="m-zone-label-wrap" hidden>Libellé
+        <input type="text" id="m-zone-label" placeholder="Ex: Peinture, RPE simple..." value="${isNew ? "" : escapeHtml(zone.label || "")}">
+      </label>
+      <div class="field-row" id="m-zone-prix-wrap" hidden>
+        <label>Prix HT/m² (€)
+          <input type="number" id="m-zone-prix" step="0.01" min="0" inputmode="decimal" value="${isNew ? "0" : zone.prix}">
+        </label>
+        <label>TVA (%)
+          <input type="number" id="m-zone-tva" step="0.1" min="0" max="100" inputmode="decimal" value="${isNew ? DEFAULT_TVA : zone.tva}">
+        </label>
+      </div>
+    `;
+
+    let currentType = type;
+    let currentKind = kind;
+
+    openModal(title, body, () => {
+      const width = parseNum("m-zone-largeur");
+      const height = parseNum("m-zone-hauteur");
+      if (width <= 0 || height <= 0) { alert("Merci de renseigner largeur et hauteur."); return false; }
+      const label = currentKind === "autre" ? document.getElementById("m-zone-label").value.trim() : "";
+      if (currentKind === "autre" && !label) { alert("Merci de préciser un libellé pour cette zone."); return false; }
+      const prix = currentKind === "autre" ? round2(Math.max(0, parseNum("m-zone-prix"))) : 0;
+      const tva = currentKind === "autre" ? round2(Math.min(100, Math.max(0, parseNum("m-zone-tva")))) : DEFAULT_TVA;
+
+      if (isNew) {
+        if (!facade.zones) facade.zones = [];
+        facade.zones.push({ id: uid(), type: currentType, width, height, kind: currentKind, label, prix, tva });
+      } else {
+        zone.type = currentType;
+        zone.width = width;
+        zone.height = height;
+        zone.kind = currentKind;
+        zone.label = label;
+        zone.prix = prix;
+        zone.tva = tva;
+      }
+      client.updatedAt = Date.now();
+      Store.upsertClient(client);
+      renderClientView();
+    });
+
+    const typeBtns = Array.from(document.getElementById("m-zone-type-toggle").querySelectorAll("button"));
+    typeBtns.forEach((b) => {
+      b.addEventListener("click", () => {
+        currentType = b.dataset.type;
+        typeBtns.forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+      });
+    });
+
+    const kindBtns = Array.from(document.getElementById("m-zone-kind-toggle").querySelectorAll("button"));
+    const labelWrap = document.getElementById("m-zone-label-wrap");
+    const prixWrap = document.getElementById("m-zone-prix-wrap");
+    function refreshKindUI() {
+      const isAutre = currentKind === "autre";
+      labelWrap.hidden = !isAutre;
+      prixWrap.hidden = !isAutre;
+    }
+    kindBtns.forEach((b) => {
+      b.addEventListener("click", () => {
+        currentKind = b.dataset.kind;
+        kindBtns.forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+        refreshKindUI();
+      });
+    });
+    refreshKindUI();
+
+    setTimeout(() => document.getElementById("m-zone-largeur").focus(), 50);
+  }
+
+  // ---------- Actions: élément complémentaire "autre" (façade ITE, saisi librement) ----------
+
+  function facadeExtraModal(client, facade, extra) {
+    const isNew = !extra;
+    const title = isNew ? "Nouvel élément \"autre\"" : "Modifier l'élément";
+
+    const body = `
+      <label>Libellé
+        <input type="text" id="m-fextra-label" placeholder="Ex: Habillage volet roulant..." value="${isNew ? "" : escapeHtml(extra.label)}">
+      </label>
+      <div class="field-row">
+        <label>Quantité
+          <input type="number" id="m-fextra-qty" step="0.01" min="0" inputmode="decimal" value="${isNew ? "1" : extra.qty}">
+        </label>
+        <label>Unité
+          <input type="text" id="m-fextra-unit" placeholder="m², ml, unité..." value="${isNew ? "unité" : escapeHtml(extra.unit)}">
+        </label>
+      </div>
+      <div class="field-row">
+        <label>Prix HT (€)
+          <input type="number" id="m-fextra-prix" step="0.01" min="0" inputmode="decimal" value="${isNew ? "0" : extra.prix}">
+        </label>
+        <label>TVA (%)
+          <input type="number" id="m-fextra-tva" step="0.1" min="0" max="100" inputmode="decimal" value="${isNew ? DEFAULT_TVA : extra.tva}">
+        </label>
+      </div>
+    `;
+
+    openModal(title, body, () => {
+      const label = document.getElementById("m-fextra-label").value.trim();
+      if (!label) { alert("Merci de préciser un libellé."); return false; }
+      const qty = round2(Math.max(0, parseNum("m-fextra-qty")));
+      const unit = document.getElementById("m-fextra-unit").value.trim() || "unité";
+      const prix = round2(Math.max(0, parseNum("m-fextra-prix")));
+      const tva = round2(Math.min(100, Math.max(0, parseNum("m-fextra-tva"))));
+
+      const customExtras = getFacadeCustomExtras(facade);
+      if (isNew) {
+        customExtras.push({ id: uid(), label, qty, unit, prix, tva });
+      } else {
+        extra.label = label;
+        extra.qty = qty;
+        extra.unit = unit;
+        extra.prix = prix;
+        extra.tva = tva;
+      }
+      client.updatedAt = Date.now();
+      Store.upsertClient(client);
+      renderClientView();
+    });
+
+    setTimeout(() => document.getElementById("m-fextra-label").focus(), 50);
+  }
 
   // ---------- Actions: ouverture (fenêtre / porte) ----------
 
@@ -1364,6 +1562,21 @@
       renderFacadeList(client);
     } else if (action === "delete-zone") {
       facade.zones = (facade.zones || []).filter((z) => z.id !== btn.dataset.zoneId);
+      client.updatedAt = Date.now();
+      Store.upsertClient(client);
+      renderClientView();
+    } else if (action === "add-zone-manual") {
+      zoneManualModal(client, facade, null);
+    } else if (action === "edit-zone") {
+      const zone = (facade.zones || []).find((z) => z.id === btn.dataset.zoneId);
+      if (zone) zoneManualModal(client, facade, zone);
+    } else if (action === "add-facade-extra") {
+      facadeExtraModal(client, facade, null);
+    } else if (action === "edit-facade-extra") {
+      const extra = getFacadeCustomExtras(facade).find((ex) => ex.id === btn.dataset.extraId);
+      if (extra) facadeExtraModal(client, facade, extra);
+    } else if (action === "delete-facade-extra") {
+      facade.customExtras = getFacadeCustomExtras(facade).filter((ex) => ex.id !== btn.dataset.extraId);
       client.updatedAt = Date.now();
       Store.upsertClient(client);
       renderClientView();
@@ -2352,6 +2565,11 @@
         return `<tr><td>${escapeHtml(z.label)}</td><td>${fmt(a, "m²")}</td><td>${fmt(z.prix, "€")}</td><td>${fmt(line.ht, "€")}</td><td>${fmt(line.ttc, "€")}</td></tr>`;
       }).join("");
 
+      const customExtrasRows = getFacadeCustomExtras(f).map((ex) => {
+        const line = htTtc((ex.qty || 0) * (ex.prix || 0), ex.tva);
+        return `<tr><td>${escapeHtml(ex.label)}</td><td>${ex.qty} ${escapeHtml(ex.unit)}</td><td>${fmt(ex.prix, "€")}</td><td>${fmt(line.ht, "€")}</td><td>${fmt(line.ttc, "€")}</td></tr>`;
+      }).join("");
+
       const sketchHtml = f.sketch ? `<img src="${f.sketch}">` : "";
       const photosHtml = (f.photos || []).map((p) => `<img src="${p.dataUrl}">`).join("");
 
@@ -2364,7 +2582,7 @@
             ${photosHtml ? `<div class="print-photo-block"><span class="print-photo-label">Photos</span><div class="print-photos-inline">${photosHtml}</div></div>` : ""}
           </div>` : ""}
           ${openingsRows ? `<table class="print-table"><thead><tr><th>Ouverture</th><th>Dimensions</th><th>Surface</th><th>Tableau</th><th>Appui</th></tr></thead><tbody>${openingsRows}</tbody></table>` : ""}
-          ${(extrasRows || autreZonesRows) ? `<table class="print-table"><thead><tr><th>Élément complémentaire</th><th>Qté</th><th>Prix HT</th><th>Total HT</th><th>Total TTC</th></tr></thead><tbody>${extrasRows}${autreZonesRows}</tbody></table>` : ""}
+          ${(extrasRows || autreZonesRows || customExtrasRows) ? `<table class="print-table"><thead><tr><th>Élément complémentaire</th><th>Qté</th><th>Prix HT</th><th>Total HT</th><th>Total TTC</th></tr></thead><tbody>${extrasRows}${autreZonesRows}${customExtrasRows}</tbody></table>` : ""}
         </div>
       `;
     }).join("");
@@ -2461,6 +2679,68 @@
     const client = Store.getClient(currentClientId);
     if (!client) return;
     printReport(buildItiReportHtml(client));
+  });
+
+  // ---------- Téléchargement du récap en PDF (en plus de l'impression) ----------
+  // Rendu de #print-area hors-écran (voir .pdf-render en CSS) puis capture en image
+  // (html2canvas) découpée sur autant de pages A4 que nécessaire (jsPDF), pour obtenir
+  // un vrai fichier .pdf téléchargé plutôt que de passer par la boîte de dialogue d'impression.
+
+  async function downloadReportPdf(client, bodyHtml, filenamePrefix, btn) {
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "⏳ Génération du PDF...";
+    try {
+      printAreaEl.innerHTML = `<div class="print-doc">${bodyHtml}</div>`;
+      printAreaEl.classList.add("pdf-render");
+      // Laisse le temps au navigateur de peindre les images (croquis, photos) avant capture.
+      await new Promise((resolve) => setTimeout(resolve, 80));
+
+      const target = printAreaEl.querySelector(".print-doc");
+      const canvas = await html2canvas(target, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({ unit: "pt", format: "a4" });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      const imgData = canvas.toDataURL("image/jpeg", 0.92);
+
+      let heightLeft = imgHeight;
+      let position = 0;
+      pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+      while (heightLeft > 0) {
+        position -= pageHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "JPEG", 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      const safeName = (client.nom || "client").replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "") || "client";
+      pdf.save(`${filenamePrefix}_${safeName}.pdf`);
+    } catch (err) {
+      console.error("Échec de génération du PDF", err);
+      alert("Échec de la génération du PDF. Réessayez, ou utilisez le bouton Imprimer.");
+    } finally {
+      printAreaEl.classList.remove("pdf-render");
+      printAreaEl.innerHTML = "";
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  }
+
+  document.getElementById("btn-download-ite").addEventListener("click", (e) => {
+    const client = Store.getClient(currentClientId);
+    if (!client) return;
+    downloadReportPdf(client, buildIteReportHtml(client), "Recap_Exterieur", e.currentTarget);
+  });
+
+  document.getElementById("btn-download-iti").addEventListener("click", (e) => {
+    const client = Store.getClient(currentClientId);
+    if (!client) return;
+    downloadReportPdf(client, buildItiReportHtml(client), "Recap_Interieur", e.currentTarget);
   });
 
   // ---------- PWA : service worker (fonctionnement hors ligne) ----------
