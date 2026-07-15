@@ -204,6 +204,12 @@ label {
 .audit-etape-costs { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.85rem; color: var(--text-muted); }
 .audit-etape-costs strong { color: var(--text); }
 
+/* DPE (ADEME) */
+.dpe-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px 16px; margin-top: 4px; }
+.dpe-grid-item { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; }
+.dpe-grid-label { display: block; font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 2px; }
+.dpe-grid-value { font-weight: 700; }
+
 /* client list */
 .client-list { display: flex; flex-direction: column; gap: 10px; }
 

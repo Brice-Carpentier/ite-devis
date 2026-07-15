@@ -766,6 +766,10 @@
   const btnAuditSearch = document.getElementById("btn-audit-search");
   const auditSearchStatusEl = document.getElementById("audit-search-status");
   const auditResultEl = document.getElementById("audit-result");
+  const fDpeNumero = document.getElementById("f-dpe-numero");
+  const btnDpeSearch = document.getElementById("btn-dpe-search");
+  const dpeSearchStatusEl = document.getElementById("dpe-search-status");
+  const dpeResultEl = document.getElementById("dpe-result");
 
   document.querySelectorAll(".form-collapsible-toggle").forEach((btn) => {
     const body = document.getElementById(btn.dataset.toggleTarget);
@@ -1016,6 +1020,8 @@
     fTypeAides.value = client.typeAides || "";
     fAuditNumero.value = client.numeroAudit || "";
     renderAuditResult(client.auditAdeme || null);
+    fDpeNumero.value = client.numeroDpe || "";
+    renderDpeResult(client.dpeAdeme || null);
 
     renderFacadeList(client);
     renderItiZoneList(client);
@@ -1484,6 +1490,7 @@
     client.rfr = fRfr.value;
     client.typeAides = fTypeAides.value;
     client.numeroAudit = fAuditNumero.value;
+    client.numeroDpe = fDpeNumero.value;
     client.updatedAt = Date.now();
     Store.upsertClient(client);
     const name = clientFullName(client);
@@ -1492,7 +1499,7 @@
 
   [
     fNom, fPrenom, fAdresseChantier, fAdresseFacturation, fCodePostal, fTel, fEmail, fDateVisite, fNotes,
-    fM2Habitable, fAnneeConstruction, fSystemeChauffage, fPersonnesCharge, fRfr, fTypeAides, fAuditNumero,
+    fM2Habitable, fAnneeConstruction, fSystemeChauffage, fPersonnesCharge, fRfr, fTypeAides, fAuditNumero, fDpeNumero,
   ].forEach((el) => {
     el.addEventListener("input", persistClientFields);
     el.addEventListener("change", persistClientFields);
@@ -1628,6 +1635,111 @@
       setAuditStatus("Recherche impossible (vérifie ta connexion internet).", "error");
     } finally {
       btnAuditSearch.disabled = false;
+    }
+  });
+
+  // ---------- DPE ADEME (data.ademe.fr, jeu de données public "dpe03existant") ----------
+  // Contrairement à l'audit énergétique, le DPE ne contient pas de scénario de travaux
+  // chiffré : uniquement les caractéristiques techniques et l'étiquette du logement.
+
+  const DPE_NUMERO_RE = /^\d{4}[A-Za-z]\d{7}[A-Za-z]$/;
+
+  async function fetchDpeAdeme(numero) {
+    const url = "https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant/lines"
+      + "?qs=" + encodeURIComponent(`numero_dpe:"${numero}"`)
+      + "&size=5&format=json";
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    return data.results || [];
+  }
+
+  function dpeGridItem(label, value) {
+    if (value === undefined || value === null || value === "") return "";
+    return `<div class="dpe-grid-item"><span class="dpe-grid-label">${escapeHtml(label)}</span><span class="dpe-grid-value">${escapeHtml(String(value))}</span></div>`;
+  }
+
+  function renderDpeResult(cached) {
+    if (!cached || !cached.dpe) {
+      dpeResultEl.hidden = true;
+      dpeResultEl.innerHTML = "";
+      return;
+    }
+    const d = cached.dpe;
+    const surface = d.surface_habitable_logement || d.surface_habitable_immeuble;
+
+    const propHtml = `
+      <div class="audit-property">
+        ${d.adresse_ban ? `<span><strong>${escapeHtml(d.adresse_ban)}</strong></span>` : ""}
+        ${d.annee_construction ? `<span>Construit en <strong>${d.annee_construction}</strong></span>` : ""}
+        ${surface ? `<span>Surface habitable <strong>${surface} m²</strong></span>` : ""}
+      </div>
+    `;
+
+    const labelHtml = `
+      <div class="audit-initial">
+        ${dpeBadgeHtml(d.etiquette_dpe)}
+        <span>GES ${dpeBadgeHtml(d.etiquette_ges)}</span>
+        ${d.conso_5_usages_par_m2_ep != null ? `<span>${fmt(d.conso_5_usages_par_m2_ep, "kWhep/m²/an")}</span>` : ""}
+      </div>
+    `;
+
+    const gridHtml = `
+      <div class="dpe-grid">
+        ${dpeGridItem("Isolation murs", d.qualite_isolation_murs)}
+        ${dpeGridItem("Isolation toiture / combles", d.qualite_isolation_plancher_haut_comble_perdu)}
+        ${dpeGridItem("Isolation planchers bas", d.qualite_isolation_plancher_bas)}
+        ${dpeGridItem("Isolation menuiseries", d.qualite_isolation_menuiseries)}
+        ${dpeGridItem("Isolation enveloppe (globale)", d.qualite_isolation_enveloppe)}
+        ${dpeGridItem("Chauffage", [d.type_energie_principale_chauffage, d.type_generateur_chauffage_principal].filter(Boolean).join(" — "))}
+        ${dpeGridItem("Eau chaude sanitaire", [d.type_energie_principale_ecs, d.type_generateur_chauffage_principal_ecs].filter(Boolean).join(" — "))}
+        ${dpeGridItem("Émissions GES", d.emission_ges_5_usages_par_m2 != null ? fmt(d.emission_ges_5_usages_par_m2, "kgCO2/m²/an") : null)}
+        ${dpeGridItem("Établi le", d.date_etablissement_dpe ? formatDate(d.date_etablissement_dpe) : null)}
+        ${dpeGridItem("Valide jusqu'au", d.date_fin_validite_dpe ? formatDate(d.date_fin_validite_dpe) : null)}
+      </div>
+    `;
+
+    dpeResultEl.innerHTML = propHtml + labelHtml + gridHtml;
+    dpeResultEl.hidden = false;
+  }
+
+  function setDpeStatus(msg, kind) {
+    if (!msg) { dpeSearchStatusEl.hidden = true; dpeSearchStatusEl.textContent = ""; return; }
+    dpeSearchStatusEl.hidden = false;
+    dpeSearchStatusEl.textContent = msg;
+    dpeSearchStatusEl.className = "audit-status" + (kind ? ` is-${kind}` : "");
+  }
+
+  btnDpeSearch.addEventListener("click", async () => {
+    const client = Store.getClient(currentClientId);
+    if (!client) return;
+    const numero = fDpeNumero.value.trim().toUpperCase();
+    if (!DPE_NUMERO_RE.test(numero)) {
+      setDpeStatus("Format invalide : attendu 4 chiffres, 1 lettre, 7 chiffres, 1 lettre (ex: 2377E4403643Y).", "error");
+      return;
+    }
+    fDpeNumero.value = numero;
+    btnDpeSearch.disabled = true;
+    setDpeStatus("Recherche en cours...", "loading");
+    try {
+      const rows = await fetchDpeAdeme(numero);
+      if (!rows.length) {
+        setDpeStatus("Aucun DPE trouvé avec ce numéro. Vérifie qu'il est correct.", "error");
+        dpeResultEl.hidden = true;
+        dpeResultEl.innerHTML = "";
+      } else {
+        client.dpeAdeme = { numero, fetchedAt: Date.now(), dpe: rows[0] };
+        client.numeroDpe = numero;
+        client.updatedAt = Date.now();
+        Store.upsertClient(client);
+        renderDpeResult(client.dpeAdeme);
+        setDpeStatus("DPE trouvé.", "success");
+      }
+    } catch (err) {
+      console.error("Échec de récupération du DPE ADEME", err);
+      setDpeStatus("Recherche impossible (vérifie ta connexion internet).", "error");
+    } finally {
+      btnDpeSearch.disabled = false;
     }
   });
 
