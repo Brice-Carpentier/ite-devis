@@ -499,6 +499,109 @@
     return db.collection("users").doc(uid).collection("clients");
   }
 
+  // ---------- Photos et croquis : sous-collection séparée ----------
+  // Un document Firestore est limité à 1 Mo. Les photos (et croquis dessinés) sont assez
+  // volumineuses pour dépasser cette limite dès qu'un client en a plusieurs, ce qui faisait
+  // échouer silencieusement toute la sauvegarde du client (texte compris) sur Firestore : le
+  // client restait alors visible seulement sur l'appareil où il avait été créé/modifié. Les
+  // médias (dataUrl) sont donc stockés à part, un document par photo/croquis, et le document
+  // client principal ne garde que les identifiants — le modèle local (localStorage) ne change
+  // pas, il garde toujours les dataUrl complètes.
+  function mediaCollection(uid, clientId) {
+    return clientsCollection(uid).doc(clientId).collection("media");
+  }
+
+  // Parcourt un objet "client" (ou un clone / une version reçue de Firestore) et retourne une
+  // référence {id, get, set} pour chaque emplacement de média (croquis de façade, photos de
+  // façade, photos de mesure ITI), afin de traiter la lecture/écriture de façon uniforme.
+  function collectMediaRefs(client) {
+    const refs = [];
+    for (const f of client.facades || []) {
+      refs.push({ id: "sketch_" + f.id, get: () => f.sketch, set: (v) => { f.sketch = v; } });
+      for (const p of f.photos || []) {
+        refs.push({ id: p.id, get: () => p.dataUrl, set: (v) => { p.dataUrl = v; } });
+      }
+    }
+    for (const zone of (client.iti && client.iti.zones) || []) {
+      for (const poste of zone.postes || []) {
+        for (const m of poste.mesures || []) {
+          for (const p of m.photos || []) {
+            refs.push({ id: p.id, get: () => p.dataUrl, set: (v) => { p.dataUrl = v; } });
+          }
+        }
+      }
+    }
+    return refs;
+  }
+
+  function stripMediaFromPayload(payload) {
+    for (const ref of collectMediaRefs(payload)) ref.set(null);
+  }
+
+  // Mémorise, pour chaque média déjà envoyé, la dataUrl envoyée en dernier — pour ne
+  // réenvoyer un média que s'il a réellement changé (et non à chaque frappe clavier ailleurs
+  // dans la fiche).
+  const syncedMediaValues = new Map(); // mediaId -> dataUrl envoyée
+
+  function uploadClientMedia(uid, client) {
+    const col = mediaCollection(uid, client.id);
+    const tasks = [];
+    for (const ref of collectMediaRefs(client)) {
+      const value = ref.get();
+      if (!value || syncedMediaValues.get(ref.id) === value) continue;
+      tasks.push(
+        col.doc(ref.id).set({ dataUrl: value }).then(() => {
+          syncedMediaValues.set(ref.id, value);
+        })
+      );
+    }
+    return Promise.all(tasks);
+  }
+
+  // Avant de remplacer un client local par une version reçue de Firestore (plus récente), on
+  // récupère d'abord les dataUrl déjà connues localement (cas normal : le média a été ajouté
+  // sur cet appareil) pour ne pas les perdre. Ce qui reste manquant (média ajouté sur un autre
+  // appareil) sera récupéré séparément depuis la sous-collection "media".
+  function hydrateMediaFromLocal(remoteClient, previousLocalClient) {
+    const localValues = new Map();
+    if (previousLocalClient) {
+      for (const ref of collectMediaRefs(previousLocalClient)) {
+        const v = ref.get();
+        if (v) localValues.set(ref.id, v);
+      }
+    }
+    const missing = [];
+    for (const ref of collectMediaRefs(remoteClient)) {
+      if (ref.get()) continue;
+      const cached = localValues.get(ref.id);
+      if (cached) ref.set(cached);
+      else missing.push(ref.id);
+    }
+    return missing;
+  }
+
+  function fetchMissingMedia(uid, clientId, mediaIds) {
+    if (!mediaIds.length) return;
+    const col = mediaCollection(uid, clientId);
+    mediaIds.forEach((mediaId) => {
+      col.doc(mediaId).get().then((snap) => {
+        if (!snap.exists) return;
+        const dataUrl = snap.data().dataUrl;
+        const client = Store.getClient(clientId);
+        if (!client) return;
+        let found = false;
+        for (const ref of collectMediaRefs(client)) {
+          if (ref.id === mediaId && !ref.get()) { ref.set(dataUrl); found = true; }
+        }
+        if (found) {
+          syncedMediaValues.set(mediaId, dataUrl);
+          Store.save();
+          refreshCurrentView();
+        }
+      }).catch((err) => console.error("Échec de récupération d'une photo/croquis", err));
+    });
+  }
+
   // Les champs texte (nom, notes, adresse...) se sauvegardent en local à chaque frappe
   // (persistClientFields), ce qui déclencherait sinon un envoi Firestore complet du document
   // (photos comprises) à chaque caractère tapé. On regroupe donc ces envois : le document
@@ -509,10 +612,16 @@
 
   function sendClientToFirestore(client) {
     if (!currentUid) return;
+    const uid = currentUid;
     // Passe par JSON pour éliminer les éventuels champs `undefined` (Firestore les refuse,
-    // contrairement à JSON.stringify utilisé pour le stockage local).
+    // contrairement à JSON.stringify utilisé pour le stockage local) et pour obtenir un clone
+    // qu'on peut dépouiller des médias sans toucher à l'objet client local.
     const payload = JSON.parse(JSON.stringify(client));
-    return clientsCollection(currentUid).doc(client.id).set(payload).catch((err) => {
+    stripMediaFromPayload(payload);
+    uploadClientMedia(uid, client).catch((err) => {
+      console.error("Échec de synchronisation des photos/croquis", err);
+    });
+    return clientsCollection(uid).doc(client.id).set(payload).catch((err) => {
       console.error("Échec de synchronisation (sauvegarde en ligne)", err);
       showSyncWarning("⚠ Cette fiche n'a pas pu être synchronisée en ligne (pas de réseau, ou trop de photos/données). Elle reste sauvegardée sur cet appareil.");
     });
@@ -548,7 +657,13 @@
 
   function deleteClientFromFirestore(id) {
     if (!currentUid) return;
-    clientsCollection(currentUid).doc(id).delete().catch((err) => {
+    const uid = currentUid;
+    mediaCollection(uid, id).get().then((snap) => {
+      const batch = db.batch();
+      snap.docs.forEach((d) => batch.delete(d.ref));
+      return batch.commit();
+    }).catch((err) => console.error("Échec de suppression des photos/croquis en ligne", err));
+    clientsCollection(uid).doc(id).delete().catch((err) => {
       console.error("Échec de synchronisation (suppression en ligne)", err);
     });
   }
@@ -575,9 +690,11 @@
         const remote = change.doc.data();
         const local = Store.getClient(change.doc.id);
         if (!local || (remote.updatedAt || 0) > (local.updatedAt || 0)) {
+          const missingMedia = hydrateMediaFromLocal(remote, local);
           const idx = Store.data.findIndex((c) => c.id === change.doc.id);
           if (idx >= 0) Store.data[idx] = remote; else Store.data.push(remote);
           changed = true;
+          if (missingMedia.length) fetchMissingMedia(uid, change.doc.id, missingMedia);
         }
       });
       if (changed) {
