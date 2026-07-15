@@ -499,16 +499,52 @@
     return db.collection("users").doc(uid).collection("clients");
   }
 
-  function pushClientToFirestore(client) {
+  // Les champs texte (nom, notes, adresse...) se sauvegardent en local à chaque frappe
+  // (persistClientFields), ce qui déclencherait sinon un envoi Firestore complet du document
+  // (photos comprises) à chaque caractère tapé. On regroupe donc ces envois : le document
+  // n'est réellement poussé en ligne que ~1s après la dernière modification, avec l'état le
+  // plus à jour au moment de l'envoi (voir Store.getClient dans le timer).
+  const FIRESTORE_PUSH_DELAY = 1000;
+  const pendingFirestorePushes = new Map(); // clientId -> timer
+
+  function sendClientToFirestore(client) {
     if (!currentUid) return;
     // Passe par JSON pour éliminer les éventuels champs `undefined` (Firestore les refuse,
     // contrairement à JSON.stringify utilisé pour le stockage local).
     const payload = JSON.parse(JSON.stringify(client));
-    clientsCollection(currentUid).doc(client.id).set(payload).catch((err) => {
+    return clientsCollection(currentUid).doc(client.id).set(payload).catch((err) => {
       console.error("Échec de synchronisation (sauvegarde en ligne)", err);
       showSyncWarning("⚠ Cette fiche n'a pas pu être synchronisée en ligne (pas de réseau, ou trop de photos/données). Elle reste sauvegardée sur cet appareil.");
     });
   }
+
+  function pushClientToFirestore(client) {
+    if (!currentUid) return;
+    const clientId = client.id;
+    const existing = pendingFirestorePushes.get(clientId);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(() => {
+      pendingFirestorePushes.delete(clientId);
+      const latest = Store.getClient(clientId);
+      if (latest) sendClientToFirestore(latest);
+    }, FIRESTORE_PUSH_DELAY);
+    pendingFirestorePushes.set(clientId, timer);
+  }
+
+  // Si l'onglet se ferme ou passe en arrière-plan avant la fin du délai ci-dessus, on envoie
+  // immédiatement les fiches en attente plutôt que de risquer de perdre la dernière saisie.
+  function flushPendingFirestorePushes() {
+    for (const [clientId, timer] of pendingFirestorePushes) {
+      clearTimeout(timer);
+      pendingFirestorePushes.delete(clientId);
+      const latest = Store.getClient(clientId);
+      if (latest) sendClientToFirestore(latest);
+    }
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushPendingFirestorePushes();
+  });
+  window.addEventListener("pagehide", flushPendingFirestorePushes);
 
   function deleteClientFromFirestore(id) {
     if (!currentUid) return;
@@ -3085,7 +3121,7 @@
 
         const mesuresRows = (poste.mesures || []).map((m) => {
           const photos = (m.photos || []).map((p) => `<img src="${p.dataUrl}">`).join("");
-          return `<tr><td>${escapeHtml(m.localisation)}</td><td>${m.largeur.toFixed(2)} × ${m.hauteur.toFixed(2)} m ${m.qty > 1 ? "× " + m.qty : ""}</td><td>${fmt(computeMesureArea(m), "m²")}</td><td>${photos ? `<div class="print-photos">${photos}</div>` : "-"}</td></tr>`;
+          return `<tr><td>${escapeHtml(m.localisation)}</td><td>${m.largeur.toFixed(2)} × ${m.hauteur.toFixed(2)} m ${m.qty > 1 ? "× " + m.qty : ""}</td><td>${fmt(computeMesureArea(m), "m²")}</td><td>${photos ? `<div class="print-photos-inline">${photos}</div>` : "-"}</td></tr>`;
         }).join("");
 
         const ouverturesRows = (poste.ouvertures || []).map((o) => {
