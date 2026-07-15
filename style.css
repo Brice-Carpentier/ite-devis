@@ -162,6 +162,48 @@ label {
 .form-collapsible-toggle .chevron { margin-left: auto; color: var(--blue); font-weight: 700; }
 .form-collapsible-body[hidden] { display: none; }
 
+/* Audit énergétique ADEME */
+.audit-search-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 6px; }
+.audit-search-row label { flex: 1; min-width: 220px; }
+.audit-hint { font-size: 0.78rem; color: var(--text-muted); margin: 0 0 10px; }
+.audit-status { font-size: 0.9rem; font-weight: 600; margin: 4px 0 10px; }
+.audit-status.is-error { color: var(--red); }
+.audit-status.is-loading { color: var(--text-muted); }
+.audit-status.is-success { color: var(--green); }
+
+.audit-property { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 0.9rem; color: var(--text-muted); margin-bottom: 14px; }
+.audit-property strong { color: var(--text); }
+
+.audit-initial {
+  display: flex; align-items: center; gap: 14px; background: var(--bg);
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; margin-bottom: 14px;
+}
+.audit-initial-label { font-weight: 700; }
+
+.dpe-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 26px; border-radius: 6px; font-weight: 800; font-size: 0.9rem; color: #fff;
+}
+.dpe-A { background: #009148; }
+.dpe-B { background: #4cb050; }
+.dpe-C { background: #c8d200; }
+.dpe-D { background: #ffd500; color: #1b2430; }
+.dpe-E { background: #f7a600; }
+.dpe-F { background: #e8621e; }
+.dpe-G { background: #d6291f; }
+
+.audit-scenario { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 14px; overflow: hidden; }
+.audit-scenario-title { background: var(--bg); padding: 10px 16px; font-weight: 700; border-bottom: 1px solid var(--border); }
+.audit-etape { padding: 12px 16px; border-bottom: 1px dashed var(--border); }
+.audit-etape:last-child { border-bottom: none; }
+.audit-etape-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.audit-etape-name { font-weight: 700; }
+.audit-etape-arrow { color: var(--text-muted); }
+.audit-etape-travaux { margin: 6px 0 8px; padding-left: 20px; }
+.audit-etape-travaux li { margin-bottom: 2px; }
+.audit-etape-costs { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.85rem; color: var(--text-muted); }
+.audit-etape-costs strong { color: var(--text); }
+
 /* client list */
 .client-list { display: flex; flex-direction: column; gap: 10px; }
 

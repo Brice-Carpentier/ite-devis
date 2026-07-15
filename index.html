@@ -129,6 +129,21 @@
         </div>
       </div>
 
+      <div class="form-collapsible">
+        <button type="button" class="form-collapsible-toggle" data-toggle-target="section-audit-body">🔍 Audit énergétique (ADEME) <span class="chevron">▸</span></button>
+        <div class="form-collapsible-body" id="section-audit-body" hidden>
+          <div class="audit-search-row">
+            <label>Numéro d'audit
+              <input type="text" id="f-audit-numero" placeholder="Ex: A23770111876U">
+            </label>
+            <button type="button" id="btn-audit-search" class="btn btn-primary">Rechercher</button>
+          </div>
+          <p class="audit-hint">Format attendu : la lettre A, 11 chiffres, 1 lettre.</p>
+          <p id="audit-search-status" class="audit-status" hidden></p>
+          <div id="audit-result" hidden></div>
+        </div>
+      </div>
+
       <label class="notes-label">Notes
         <textarea id="f-notes" rows="2" placeholder="Remarques, contraintes d'accès, isolant choisi..."></textarea>
       </label>

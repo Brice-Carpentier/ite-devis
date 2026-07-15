@@ -762,6 +762,10 @@
   const fPersonnesCharge = document.getElementById("f-personnes-charge");
   const fRfr = document.getElementById("f-rfr");
   const fTypeAides = document.getElementById("f-type-aides");
+  const fAuditNumero = document.getElementById("f-audit-numero");
+  const btnAuditSearch = document.getElementById("btn-audit-search");
+  const auditSearchStatusEl = document.getElementById("audit-search-status");
+  const auditResultEl = document.getElementById("audit-result");
 
   document.querySelectorAll(".form-collapsible-toggle").forEach((btn) => {
     const body = document.getElementById(btn.dataset.toggleTarget);
@@ -1010,6 +1014,8 @@
     fPersonnesCharge.value = client.personnesCharge || "";
     fRfr.value = client.rfr || "";
     fTypeAides.value = client.typeAides || "";
+    fAuditNumero.value = client.numeroAudit || "";
+    renderAuditResult(client.auditAdeme || null);
 
     renderFacadeList(client);
     renderItiZoneList(client);
@@ -1477,6 +1483,7 @@
     client.personnesCharge = fPersonnesCharge.value;
     client.rfr = fRfr.value;
     client.typeAides = fTypeAides.value;
+    client.numeroAudit = fAuditNumero.value;
     client.updatedAt = Date.now();
     Store.upsertClient(client);
     const name = clientFullName(client);
@@ -1485,10 +1492,143 @@
 
   [
     fNom, fPrenom, fAdresseChantier, fAdresseFacturation, fCodePostal, fTel, fEmail, fDateVisite, fNotes,
-    fM2Habitable, fAnneeConstruction, fSystemeChauffage, fPersonnesCharge, fRfr, fTypeAides,
+    fM2Habitable, fAnneeConstruction, fSystemeChauffage, fPersonnesCharge, fRfr, fTypeAides, fAuditNumero,
   ].forEach((el) => {
     el.addEventListener("input", persistClientFields);
     el.addEventListener("change", persistClientFields);
+  });
+
+  // ---------- Audit énergétique ADEME (data.ademe.fr, jeu de données public "audit-opendata") ----------
+
+  const AUDIT_NUMERO_RE = /^A\d{11}[A-Za-z]$/;
+  const AUDIT_ETAPE_ORDER = [
+    "état initial", "étape première", "étape deuxième", "étape troisième",
+    "étape quatrième", "étape cinquième", "étape sixième", "étape finale",
+  ];
+
+  function auditEtapeRank(etape) {
+    const idx = AUDIT_ETAPE_ORDER.indexOf(etape);
+    return idx === -1 ? AUDIT_ETAPE_ORDER.length : idx;
+  }
+
+  function dpeBadgeHtml(letter) {
+    if (!letter) return "";
+    return `<span class="dpe-badge dpe-${escapeHtml(letter)}">${escapeHtml(letter)}</span>`;
+  }
+
+  async function fetchAuditAdeme(numero) {
+    const url = "https://data.ademe.fr/data-fair/api/v1/datasets/audit-opendata/lines"
+      + "?qs=" + encodeURIComponent(`n_audit:"${numero}"`)
+      + "&size=50&format=json";
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    return data.results || [];
+  }
+
+  function renderAuditResult(cached) {
+    if (!cached || !cached.rows || !cached.rows.length) {
+      auditResultEl.hidden = true;
+      auditResultEl.innerHTML = "";
+      return;
+    }
+    const rows = cached.rows;
+    const initial = rows.find((r) => r.categorie_scenario === "état initial");
+    const scenarioNames = [...new Set(rows.map((r) => r.categorie_scenario).filter((c) => c !== "état initial"))];
+
+    const propRef = initial || rows[0];
+    const propHtml = `
+      <div class="audit-property">
+        ${propRef.adresse_ban ? `<span><strong>${escapeHtml(propRef.adresse_ban)}</strong></span>` : ""}
+        ${propRef.annee_construction ? `<span>Construit en <strong>${propRef.annee_construction}</strong></span>` : ""}
+        ${propRef.surface_habitable_logement ? `<span>Surface habitable <strong>${propRef.surface_habitable_logement} m²</strong></span>` : ""}
+      </div>
+    `;
+
+    const initialHtml = initial ? `
+      <div class="audit-initial">
+        <span class="audit-initial-label">État initial</span>
+        ${dpeBadgeHtml(initial.classe_bilan_dpe)}
+        <span>GES ${dpeBadgeHtml(initial.etiquette_ges)}</span>
+        ${initial.conso_5_usages_m2 != null ? `<span>${fmt(initial.conso_5_usages_m2, "kWhep/m²/an")}</span>` : ""}
+      </div>
+    ` : "";
+
+    const scenariosHtml = scenarioNames.map((scenarioName) => {
+      const etapes = rows
+        .filter((r) => r.categorie_scenario === scenarioName)
+        .sort((a, b) => auditEtapeRank(a.etape_travaux) - auditEtapeRank(b.etape_travaux));
+
+      const etapesHtml = etapes.map((e) => {
+        const travaux = (e.travaux_realises || "").split(",").map((t) => t.trim()).filter(Boolean);
+        return `
+          <div class="audit-etape">
+            <div class="audit-etape-head">
+              <span class="audit-etape-name">${escapeHtml(e.etape_travaux || "Étape")}</span>
+              <span class="audit-etape-arrow">→</span>
+              ${dpeBadgeHtml(e.classe_bilan_dpe)}
+              <span>GES ${dpeBadgeHtml(e.etiquette_ges)}</span>
+            </div>
+            ${travaux.length ? `<ul class="audit-etape-travaux">${travaux.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}</ul>` : ""}
+            <div class="audit-etape-costs">
+              ${e.cout_travaux != null ? `<span>Coût de l'étape : <strong>${fmt(e.cout_travaux, "€")}</strong></span>` : ""}
+              ${e.couts_cumules_travaux != null ? `<span>Coût cumulé : <strong>${fmt(e.couts_cumules_travaux, "€")}</strong></span>` : ""}
+              ${e.gain_financier_cumule != null ? `<span>Gain cumulé estimé/an : <strong>${fmt(e.gain_financier_cumule, "€")}</strong></span>` : ""}
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      return `
+        <div class="audit-scenario">
+          <div class="audit-scenario-title">${escapeHtml(scenarioName)}</div>
+          ${etapesHtml}
+        </div>
+      `;
+    }).join("");
+
+    auditResultEl.innerHTML = propHtml + initialHtml + (scenariosHtml || "<p>Aucun scénario de travaux dans cet audit.</p>");
+    auditResultEl.hidden = false;
+  }
+
+  function setAuditStatus(msg, kind) {
+    if (!msg) { auditSearchStatusEl.hidden = true; auditSearchStatusEl.textContent = ""; return; }
+    auditSearchStatusEl.hidden = false;
+    auditSearchStatusEl.textContent = msg;
+    auditSearchStatusEl.className = "audit-status" + (kind ? ` is-${kind}` : "");
+  }
+
+  btnAuditSearch.addEventListener("click", async () => {
+    const client = Store.getClient(currentClientId);
+    if (!client) return;
+    const numero = fAuditNumero.value.trim().toUpperCase();
+    if (!AUDIT_NUMERO_RE.test(numero)) {
+      setAuditStatus("Format invalide : attendu la lettre A, 11 chiffres, 1 lettre (ex: A23770111876U).", "error");
+      return;
+    }
+    fAuditNumero.value = numero;
+    btnAuditSearch.disabled = true;
+    setAuditStatus("Recherche en cours...", "loading");
+    try {
+      const rows = await fetchAuditAdeme(numero);
+      if (!rows.length) {
+        setAuditStatus("Aucun audit trouvé avec ce numéro. Vérifie qu'il est correct.", "error");
+        auditResultEl.hidden = true;
+        auditResultEl.innerHTML = "";
+      } else {
+        client.auditAdeme = { numero, fetchedAt: Date.now(), rows };
+        client.numeroAudit = numero;
+        client.updatedAt = Date.now();
+        Store.upsertClient(client);
+        renderAuditResult(client.auditAdeme);
+        setAuditStatus("Audit trouvé.", "success");
+      }
+    } catch (err) {
+      console.error("Échec de récupération de l'audit ADEME", err);
+      setAuditStatus("Recherche impossible (vérifie ta connexion internet).", "error");
+    } finally {
+      btnAuditSearch.disabled = false;
+    }
   });
 
   // ---------- Actions: clients ----------
