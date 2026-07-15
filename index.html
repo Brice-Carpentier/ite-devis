@@ -58,6 +58,12 @@
       <input type="text" id="client-search" placeholder="Rechercher un client...">
     </div>
 
+    <div class="statut-filter-row">
+      <button type="button" class="statut-filter-btn active" data-statut-filter="tous">Tous</button>
+      <button type="button" class="statut-filter-btn" data-statut-filter="a_faire">Devis à faire</button>
+      <button type="button" class="statut-filter-btn" data-statut-filter="envoye">Devis envoyé</button>
+    </div>
+
     <div id="client-list" class="client-list"></div>
     <p id="empty-clients" class="empty-msg" hidden>Aucune fiche client. Créez la première avec "+ Nouveau client".</p>
   </section>
@@ -67,6 +73,7 @@
     <header class="topbar">
       <button id="btn-back-clients" class="btn btn-ghost">← Clients</button>
       <h1 id="client-title">Fiche client</h1>
+      <button id="btn-toggle-statut" type="button" class="statut-badge"></button>
       <button id="btn-delete-client" class="btn btn-danger">Supprimer</button>
     </header>
 

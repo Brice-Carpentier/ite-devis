@@ -111,6 +111,36 @@ html, body {
 
 .search-row { margin-bottom: 14px; }
 
+/* Suivi client : statut du devis */
+.statut-filter-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.statut-filter-btn {
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text-muted);
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.statut-filter-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+
+.statut-badge {
+  border: none;
+  border-radius: 20px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.statut-badge.statut-a_faire { background: #fdf3e0; color: #a15c00; }
+.statut-badge.statut-envoye { background: #e3f6ea; color: var(--green); }
+
+.ci-statut { display: inline-block; border-radius: 12px; padding: 2px 9px; font-size: 0.75rem; font-weight: 700; margin-top: 4px; }
+.ci-statut.statut-a_faire { background: #fdf3e0; color: #a15c00; }
+.ci-statut.statut-envoye { background: #e3f6ea; color: var(--green); }
+
 input[type="text"], input[type="tel"], input[type="date"], input[type="number"], input[type="email"], input[type="password"], select, textarea {
   width: 100%;
   padding: 12px 14px;

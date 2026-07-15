@@ -751,6 +751,11 @@
   const clientListEl = document.getElementById("client-list");
   const emptyClientsEl = document.getElementById("empty-clients");
   const clientSearch = document.getElementById("client-search");
+  const btnToggleStatut = document.getElementById("btn-toggle-statut");
+
+  const STATUT_LABELS = { a_faire: "🟠 Devis à faire", envoye: "🟢 Devis envoyé" };
+  function clientStatut(client) { return client.statutDevis || "a_faire"; }
+  let statutFilter = "tous";
 
   const clientTitle = document.getElementById("client-title");
   const fNom = document.getElementById("f-nom");
@@ -944,6 +949,7 @@
   function renderClientList() {
     const term = clientSearch.value.trim().toLowerCase();
     const clients = [...Store.data]
+      .filter((c) => statutFilter === "tous" || clientStatut(c) === statutFilter)
       .filter((c) => !term
         || clientFullName(c).toLowerCase().includes(term)
         || clientAdresseChantier(c).toLowerCase().includes(term))
@@ -956,6 +962,7 @@
       const totals = computeClientTotals(c);
       const adresse = clientAdresseChantier(c);
       const dateVisite = clientDateVisite(c);
+      const statut = clientStatut(c);
       const div = document.createElement("div");
       div.className = "client-item";
       div.innerHTML = `
@@ -963,12 +970,36 @@
           <div class="ci-name">${escapeHtml(clientFullName(c))}</div>
           <div class="ci-sub">${escapeHtml(adresse || "Adresse non renseignée")}${dateVisite ? " · Visite technique " + formatDate(dateVisite) : ""}</div>
           <div class="ci-sub">${fmt(totals.nette, "m²")} nette · ${c.facades.length} façade(s)</div>
+          <span class="ci-statut statut-${statut}">${escapeHtml(STATUT_LABELS[statut])}</span>
         </div>
         <div class="ci-arrow">›</div>
       `;
       div.addEventListener("click", () => showClientView(c.id));
       clientListEl.appendChild(div);
     }
+  }
+
+  document.querySelectorAll(".statut-filter-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      statutFilter = btn.dataset.statutFilter;
+      document.querySelectorAll(".statut-filter-btn").forEach((b) => b.classList.toggle("active", b === btn));
+      renderClientList();
+    });
+  });
+
+  btnToggleStatut.addEventListener("click", () => {
+    const client = Store.getClient(currentClientId);
+    if (!client) return;
+    client.statutDevis = clientStatut(client) === "a_faire" ? "envoye" : "a_faire";
+    client.updatedAt = Date.now();
+    Store.upsertClient(client);
+    renderStatutBadge(client);
+  });
+
+  function renderStatutBadge(client) {
+    const statut = clientStatut(client);
+    btnToggleStatut.textContent = STATUT_LABELS[statut];
+    btnToggleStatut.className = "statut-badge statut-" + statut;
   }
 
   function formatDate(iso) {
@@ -1009,6 +1040,7 @@
     migrateClientExtras(client);
 
     clientTitle.textContent = clientFullName(client) !== "(Sans nom)" ? clientFullName(client) : "Nouvelle fiche client";
+    renderStatutBadge(client);
     fNom.value = client.nom || "";
     fPrenom.value = client.prenom || "";
     fAdresseChantier.value = clientAdresseChantier(client);
