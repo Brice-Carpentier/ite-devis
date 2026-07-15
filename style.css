@@ -748,6 +748,11 @@ label {
 .zone-item .photo-gallery { flex-basis: 100%; margin-top: 2px; }
 .photo-thumb-sm { width: 40px; height: 40px; font-size: 1.1rem; }
 
+.photo-thumb-pending {
+  display: flex; align-items: center; justify-content: center;
+  background: #fafbfc; color: var(--text-muted); font-size: 1.2rem; cursor: default;
+}
+
 /* visionneuse photo plein écran */
 
 .photo-lightbox {

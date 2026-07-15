@@ -706,7 +706,13 @@
         // Pousse en ligne les fiches créées hors-ligne avant la première connexion.
         const remoteIds = new Set(snapshot.docs.map((d) => d.id));
         for (const client of Store.data) {
-          if (!remoteIds.has(client.id)) pushClientToFirestore(client);
+          if (!remoteIds.has(client.id)) { pushClientToFirestore(client); continue; }
+          // Une photo/croquis peut être resté non téléchargé (échec réseau ou de règles
+          // Firestore précédent) sans que le document du client ait changé depuis — dans ce
+          // cas la comparaison d'updatedAt ci-dessus ne redéclenche rien. On retente donc une
+          // fois, à chaque (re)connexion, la récupération de tout média manquant.
+          const missingMedia = collectMediaRefs(client).filter((ref) => !ref.get()).map((ref) => ref.id);
+          if (missingMedia.length) fetchMissingMedia(uid, client.id, missingMedia);
         }
       }
     }, (err) => {
@@ -1824,8 +1830,9 @@
   function photoGalleryHtml(photos, dataAttrs, small) {
     const thumbClass = small ? "photo-thumb photo-thumb-sm" : "photo-thumb";
     const addClass = small ? "photo-thumb-add photo-thumb-sm" : "photo-thumb-add";
-    const thumbs = (photos || []).map((p) =>
-      `<img class="${thumbClass}" data-action="view-photo" ${dataAttrs} data-photo-id="${p.id}" src="${p.dataUrl}" alt="Photo">`
+    const thumbs = (photos || []).map((p) => p.dataUrl
+      ? `<img class="${thumbClass}" data-action="view-photo" ${dataAttrs} data-photo-id="${p.id}" src="${p.dataUrl}" alt="Photo">`
+      : `<div class="${thumbClass} photo-thumb-pending" title="Photo prise sur un autre appareil, en cours de synchronisation...">⏳</div>`
     ).join("");
     return `
       <div class="photo-gallery">
