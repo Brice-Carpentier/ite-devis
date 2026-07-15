@@ -240,6 +240,39 @@ label {
 .dpe-grid-label { display: block; font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 2px; }
 .dpe-grid-value { font-weight: 700; }
 
+/* Aides — simulation */
+.checkbox-label { display: flex; align-items: center; gap: 8px; flex-direction: row; font-weight: 600; color: var(--text-muted); }
+.checkbox-label input[type="checkbox"] { width: auto; }
+
+.aide-categorie-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 6px; padding: 2px 10px; font-weight: 800; color: #fff; margin-left: 4px;
+}
+.aide-cat-bleu { background: #1d6fd6; }
+.aide-cat-jaune { background: #d4a017; }
+.aide-cat-violet { background: #7a4fc2; }
+.aide-cat-rose { background: #d6579b; }
+
+.parcours-toggle { display: flex; gap: 8px; margin: 10px 0 16px; flex-wrap: wrap; }
+.parcours-btn {
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text-muted);
+  border-radius: 20px;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.parcours-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+
+.aide-cee-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin-bottom: 10px; }
+.aide-cee-table th, .aide-cee-table td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+.aide-cee-table th { background: var(--bg); }
+.aide-cee-table input[type="number"] { width: 90px; padding: 6px 8px; }
+
+.aide-total { font-size: 1.05rem; font-weight: 700; text-align: right; background: var(--bg); border-radius: 10px; padding: 10px 14px; }
+
 /* client list */
 .client-list { display: flex; flex-direction: column; gap: 10px; }
 

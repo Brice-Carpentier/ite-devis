@@ -222,6 +222,80 @@
     };
   }
 
+  // ---------- Aides : catégorie de revenu (RFR), CEE mono-geste, parcours accompagné ----------
+  // Barèmes saisis manuellement depuis les grilles officielles 2026 (plafonds de ressources) et
+  // le tableau Prime Effy zone climatique H2 fourni par l'utilisateur. Ces montants changent
+  // potentiellement chaque année : à revérifier en cas de doute avant de s'y fier en clientèle.
+
+  const RFR_PLAFONDS_2026 = {
+    hors_idf: {
+      bleu: [17363, 25393, 30540, 35676, 40835], extraBleu: 5151,
+      jaune: [22259, 32553, 39148, 45735, 52348], extraJaune: 6598,
+      violet: [31185, 45842, 55196, 64550, 73907], extraViolet: 9357,
+    },
+    idf: {
+      bleu: [24031, 35270, 42357, 49455, 56580], extraBleu: 7116,
+      jaune: [29253, 42933, 51564, 60208, 68877], extraJaune: 8663,
+      violet: [40851, 60051, 71846, 84562, 96817], extraViolet: 12257,
+    },
+  };
+
+  const CATEGORIE_LABELS = { bleu: "Bleu (très modeste)", jaune: "Jaune (modeste)", violet: "Violet (intermédiaire)", rose: "Rose (aisé)" };
+
+  function computeCategorieRevenu(rfr, nbPersonnes, idf) {
+    const table = idf ? RFR_PLAFONDS_2026.idf : RFR_PLAFONDS_2026.hors_idf;
+    const n = Math.max(1, Math.round(nbPersonnes || 1));
+    const seuil = (arr, extra) => (n <= 5 ? arr[n - 1] : arr[4] + (n - 5) * extra);
+    const bleu = seuil(table.bleu, table.extraBleu);
+    const jaune = seuil(table.jaune, table.extraJaune);
+    const violet = seuil(table.violet, table.extraViolet);
+    if (rfr <= bleu) return "bleu";
+    if (rfr <= jaune) return "jaune";
+    if (rfr <= violet) return "violet";
+    return "rose";
+  }
+
+  // Tarifs Prime Effy (CEE) — zone climatique H2, en vigueur au 01/01/2026. Depuis septembre
+  // 2025, l'isolation n'est plus finançable par MaPrimeRénov' en mono-geste (quel que soit le
+  // poste) : seule la CEE reste disponible sur ce parcours.
+  const CEE_RATES_H2 = {
+    combles_perdus: { label: "Combles perdus", bleu: 10.64, jaune: 8.40, violet: 8.40, rose: 8.40 },
+    combles_amenages: { label: "Combles aménagés / rampants", bleu: 8.40, jaune: 6, violet: 6, rose: 6 },
+    toiture_terrasse: { label: "Toiture terrasse", bleu: 7.60, jaune: 6, violet: 6, rose: 6 },
+    murs_ext: { label: "Murs extérieur (ITE)", bleu: 9.88, jaune: 7.80, violet: 7.80, rose: 7.80 },
+    murs_int: { label: "Murs intérieur (ITI)", bleu: 9.88, jaune: 7.80, violet: 7.80, rose: 7.80 },
+  };
+
+  // Barème MaPrimeRénov' rénovation d'ampleur (parcours accompagné), en vigueur depuis
+  // septembre 2025 (bonus sortie de passoire et palier 4 classes supprimés depuis).
+  const ACCOMPAGNE_BAREME = {
+    "2": { plafond: 30000, taux: { bleu: 0.80, jaune: 0.60, violet: 0.45, rose: 0.10 } },
+    "3": { plafond: 40000, taux: { bleu: 0.80, jaune: 0.60, violet: 0.45, rose: 0.10 } },
+  };
+
+  // Reconnaissance approximative du type de poste ITI (texte libre) pour proposer une surface
+  // par défaut par catégorie CEE — l'utilisateur peut toujours corriger la valeur affichée.
+  function matchItiPosteCategorie(posteType) {
+    const t = (posteType || "").toLowerCase();
+    if (/combles?\s*perdus?/.test(t)) return "combles_perdus";
+    if (/rampants?|combles?\s*am[ée]nag/.test(t)) return "combles_amenages";
+    if (/toiture.*terrasse|terrasse/.test(t)) return "toiture_terrasse";
+    if (/murs?/.test(t)) return "murs_int";
+    return null;
+  }
+
+  function computeDefaultCeeSurfaces(client) {
+    const surfaces = { combles_perdus: 0, combles_amenages: 0, toiture_terrasse: 0, murs_ext: 0, murs_int: 0 };
+    surfaces.murs_ext = computeClientTotals(client).nette;
+    for (const zone of getClientIti(client).zones) {
+      for (const poste of (zone.postes || [])) {
+        const cat = matchItiPosteCategorie(poste.type);
+        if (cat) surfaces[cat] += computePoste(poste).surface;
+      }
+    }
+    return surfaces;
+  }
+
   // ---------- Intérieur (ITI) : zones -> postes de travaux -> cotes + éléments complémentaires ----------
   // Suggestions de types de postes : voir la <datalist id="iti-poste-suggestions"> dans index.html.
 
@@ -781,6 +855,16 @@
   const btnDpeSearch = document.getElementById("btn-dpe-search");
   const dpeSearchStatusEl = document.getElementById("dpe-search-status");
   const dpeResultEl = document.getElementById("dpe-result");
+  const fAidePersonnes = document.getElementById("f-aide-personnes");
+  const fAideIdf = document.getElementById("f-aide-idf");
+  const aideCategorieInfoEl = document.getElementById("aide-categorie-info");
+  const aideMonoGesteEl = document.getElementById("aide-mono-geste");
+  const aideAccompagneEl = document.getElementById("aide-accompagne");
+  const aideCeeRowsEl = document.getElementById("aide-cee-rows");
+  const aideCeeTotalEl = document.getElementById("aide-cee-total");
+  const fAideSautClasse = document.getElementById("f-aide-saut-classe");
+  const aideAccompagneDetailEl = document.getElementById("aide-accompagne-detail");
+  const aideAccompagneTotalEl = document.getElementById("aide-accompagne-total");
 
   document.querySelectorAll(".form-collapsible-toggle").forEach((btn) => {
     const body = document.getElementById(btn.dataset.toggleTarget);
@@ -1060,6 +1144,7 @@
     renderAuditResult(client.auditAdeme || null);
     fDpeNumero.value = client.numeroDpe || "";
     renderDpeResult(client.dpeAdeme || null);
+    renderAideCalc(client);
 
     renderFacadeList(client);
     renderItiZoneList(client);
@@ -1779,6 +1864,120 @@
     } finally {
       btnDpeSearch.disabled = false;
     }
+  });
+
+  // ---------- Aides : simulation (catégorie de revenu, CEE mono-geste, parcours accompagné) ----------
+
+  function currentCategorieRevenu(client) {
+    const rfr = parseFloat(client.rfr) || 0;
+    if (!rfr) return null;
+    const nbPersonnes = parseFloat(client.nbPersonnesFoyer) || 1;
+    return computeCategorieRevenu(rfr, nbPersonnes, !!client.idf);
+  }
+
+  function buildAideCeeRows(client) {
+    const defaults = computeDefaultCeeSurfaces(client);
+    aideCeeRowsEl.innerHTML = Object.keys(CEE_RATES_H2).map((key) => `
+      <tr data-cee-key="${key}">
+        <td>${escapeHtml(CEE_RATES_H2[key].label)}</td>
+        <td><input type="number" class="aide-cee-surface" min="0" step="0.01" value="${(defaults[key] || 0).toFixed(2)}"></td>
+        <td class="aide-cee-rate">—</td>
+        <td class="aide-cee-montant">—</td>
+      </tr>
+    `).join("");
+  }
+
+  function refreshAideCategorieAndTotals(client) {
+    const categorie = currentCategorieRevenu(client);
+    aideCategorieInfoEl.innerHTML = categorie
+      ? `Catégorie calculée : <span class="aide-categorie-badge aide-cat-${categorie}">${CATEGORIE_LABELS[categorie]}</span>`
+      : `Renseigne le RFR (section "Aides" ci-dessus) pour calculer la catégorie.`;
+
+    let total = 0;
+    aideCeeRowsEl.querySelectorAll("tr").forEach((tr) => {
+      const key = tr.dataset.ceeKey;
+      const rate = categorie ? CEE_RATES_H2[key][categorie] : null;
+      const surface = parseFloat(tr.querySelector(".aide-cee-surface").value) || 0;
+      const montant = rate != null ? surface * rate : 0;
+      tr.querySelector(".aide-cee-rate").textContent = rate != null ? fmt(rate, "€/m²") : "—";
+      tr.querySelector(".aide-cee-montant").textContent = rate != null ? fmt(montant, "€") : "—";
+      total += montant;
+    });
+    aideCeeTotalEl.textContent = fmt(total, "€");
+
+    renderAideAccompagne(client, categorie);
+  }
+
+  function renderAideAccompagne(client, categorie) {
+    const saut = client.sautClasseAide || "2";
+    const bareme = ACCOMPAGNE_BAREME[saut];
+    const grand = computeGrandTotals(client);
+    const montantRetenu = Math.min(grand.ht, bareme.plafond);
+    const taux = categorie ? bareme.taux[categorie] : null;
+    const aide = taux != null ? montantRetenu * taux : 0;
+
+    aideAccompagneDetailEl.innerHTML = `
+      <span>Montant travaux HT : <strong>${fmt(grand.ht, "€")}</strong></span>
+      <span>Plafond éligible : <strong>${fmt(bareme.plafond, "€")}</strong></span>
+      <span>Montant retenu : <strong>${fmt(montantRetenu, "€")}</strong></span>
+      <span>Taux applicable : <strong>${taux != null ? (taux * 100).toFixed(0) + " %" : "— (renseigne le RFR)"}</strong></span>
+    `;
+    aideAccompagneTotalEl.textContent = fmt(aide, "€");
+  }
+
+  function renderAideCalc(client) {
+    fAidePersonnes.value = client.nbPersonnesFoyer || "";
+    fAideIdf.checked = !!client.idf;
+
+    buildAideCeeRows(client);
+    refreshAideCategorieAndTotals(client);
+
+    const parcours = client.parcoursAide || "mono_geste";
+    document.querySelectorAll(".parcours-btn").forEach((b) => b.classList.toggle("active", b.dataset.parcours === parcours));
+    aideMonoGesteEl.hidden = parcours !== "mono_geste";
+    aideAccompagneEl.hidden = parcours !== "accompagne";
+
+    fAideSautClasse.value = client.sautClasseAide || "2";
+  }
+
+  [fAidePersonnes, fAideIdf].forEach((el) => {
+    el.addEventListener("input", () => {
+      const client = Store.getClient(currentClientId);
+      if (!client) return;
+      client.nbPersonnesFoyer = fAidePersonnes.value;
+      client.idf = fAideIdf.checked;
+      client.updatedAt = Date.now();
+      Store.upsertClient(client);
+      refreshAideCategorieAndTotals(client);
+    });
+  });
+
+  document.querySelectorAll(".parcours-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const client = Store.getClient(currentClientId);
+      if (!client) return;
+      client.parcoursAide = btn.dataset.parcours;
+      client.updatedAt = Date.now();
+      Store.upsertClient(client);
+      document.querySelectorAll(".parcours-btn").forEach((b) => b.classList.toggle("active", b === btn));
+      aideMonoGesteEl.hidden = btn.dataset.parcours !== "mono_geste";
+      aideAccompagneEl.hidden = btn.dataset.parcours !== "accompagne";
+    });
+  });
+
+  aideCeeRowsEl.addEventListener("input", () => {
+    const client = Store.getClient(currentClientId);
+    if (!client) return;
+    refreshAideCategorieAndTotals(client);
+  });
+
+  fAideSautClasse.addEventListener("change", () => {
+    const client = Store.getClient(currentClientId);
+    if (!client) return;
+    client.sautClasseAide = fAideSautClasse.value;
+    client.updatedAt = Date.now();
+    Store.upsertClient(client);
+    renderAideAccompagne(client, currentCategorieRevenu(client));
   });
 
   // ---------- Actions: clients ----------

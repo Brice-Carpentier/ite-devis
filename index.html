@@ -166,6 +166,47 @@
         </div>
       </div>
 
+      <div class="form-collapsible">
+        <button type="button" class="form-collapsible-toggle" data-toggle-target="section-aides-calc-body">💰 Aides — simulation <span class="chevron">▸</span></button>
+        <div class="form-collapsible-body" id="section-aides-calc-body" hidden>
+          <div class="form-grid">
+            <label>Nombre de personnes du foyer
+              <input type="number" id="f-aide-personnes" min="1" step="1" inputmode="numeric" placeholder="1">
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="f-aide-idf">
+              Logement en Île-de-France
+            </label>
+          </div>
+          <p id="aide-categorie-info" class="audit-hint"></p>
+
+          <div class="parcours-toggle">
+            <button type="button" class="parcours-btn active" data-parcours="mono_geste">Mono-geste (CEE)</button>
+            <button type="button" class="parcours-btn" data-parcours="accompagne">Parcours accompagné</button>
+          </div>
+
+          <div id="aide-mono-geste">
+            <p class="audit-hint">Tarifs Prime Effy (CEE), zone climatique H2. Surfaces pré-remplies depuis tes calculs ITE/ITI — modifiables.</p>
+            <table class="aide-cee-table">
+              <thead><tr><th>Poste</th><th>Surface (m²)</th><th>Tarif</th><th>Montant</th></tr></thead>
+              <tbody id="aide-cee-rows"></tbody>
+            </table>
+            <div class="aide-total">Total aide CEE estimée : <strong id="aide-cee-total">0,00 €</strong></div>
+          </div>
+
+          <div id="aide-accompagne" hidden>
+            <label>Saut de classes DPE visé
+              <select id="f-aide-saut-classe">
+                <option value="2">2 classes</option>
+                <option value="3">3 classes ou plus</option>
+              </select>
+            </label>
+            <div id="aide-accompagne-detail" class="audit-property"></div>
+            <div class="aide-total">Aide estimée (parcours accompagné) : <strong id="aide-accompagne-total">0,00 €</strong></div>
+          </div>
+        </div>
+      </div>
+
       <label class="notes-label">Notes
         <textarea id="f-notes" rows="2" placeholder="Remarques, contraintes d'accès, isolant choisi..."></textarea>
       </label>
