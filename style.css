@@ -418,31 +418,6 @@ label {
   margin-top: 10px;
 }
 
-.extra-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  background: #fafbfc;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 12px;
-  flex-wrap: wrap;
-}
-.extra-row-active { background: #eef8f1; border-color: #bfe6cc; }
-
-.extra-label { font-size: 0.95rem; font-weight: 600; }
-.extra-unit { color: var(--text-muted); font-weight: 400; font-size: 0.85rem; }
-
-.extra-qty-controls { display: flex; align-items: center; gap: 6px; }
-.extra-qty-controls .btn-small { padding: 6px 14px; font-size: 1rem; }
-
-.extra-qty-input {
-  width: 70px;
-  text-align: center;
-  padding: 8px 6px;
-}
-
 .extra-price-controls {
   display: flex;
   align-items: center;

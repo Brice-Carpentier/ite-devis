@@ -114,6 +114,8 @@
     { key: "peinture_tete_cheminee", label: "Peinture tête de cheminée", unit: "unité" },
     { key: "luminaire", label: "Luminaires", unit: "unité" },
     { key: "point_eau_rallonge", label: "Point d'eau à rallonger", unit: "unité" },
+    { key: "peinture_cache_moineau", label: "Peinture Cache Moineau", unit: "unité" },
+    { key: "cache_moineau_pvc", label: "Cache Moineaux en PVC", unit: "ml" },
   ];
 
   const DEFAULT_TVA = 10;
@@ -136,22 +138,37 @@
     return e;
   }
 
-  // Les éléments complémentaires sont rattachés à chaque façade (`facade.extras`).
-  function getExtraEntry(facade, key) {
-    if (!facade.extras) facade.extras = {};
-    let e = facade.extras[key];
-    if (typeof e === "number") e = { qty: e, prix: 0, tva: DEFAULT_TVA };
-    if (!e) e = { qty: 0, prix: 0, tva: DEFAULT_TVA };
-    if (e.tva === undefined) e.tva = DEFAULT_TVA;
-    facade.extras[key] = e;
-    return e;
+  // Éléments complémentaires d'une façade : liste d'éléments ajoutés un par un (choix dans le
+  // catalogue ou "personnalisé"), comme pour les postes ITI (`facade.extraItems`).
+  // Migration depuis l'ancien modèle (`facade.extras` objet à clé fixe + `facade.customExtras`
+  // tableau "autre" séparé) : les anciennes fiches sont converties au premier accès, sans perte
+  // de données ; les anciens champs restent en place (inertes) plutôt que supprimés.
+  function migrateFacadeExtraItems(facade) {
+    if (facade.extraItems) return;
+    facade.extraItems = [];
+    if (facade.extras) {
+      for (const key of Object.keys(facade.extras)) {
+        const e = facade.extras[key];
+        if (!e || !(e.qty > 0)) continue;
+        const item = EXTRAS_CATALOG.find((it) => it.key === key);
+        facade.extraItems.push({
+          id: uid(), catalogKey: key,
+          label: item ? item.label : key,
+          unit: item ? item.unit : "unité",
+          qty: e.qty, prix: e.prix || 0, tva: e.tva !== undefined ? e.tva : DEFAULT_TVA,
+        });
+      }
+    }
+    if (facade.customExtras) {
+      for (const ex of facade.customExtras) {
+        facade.extraItems.push({ id: ex.id, catalogKey: "", label: ex.label, unit: ex.unit, qty: ex.qty, prix: ex.prix, tva: ex.tva });
+      }
+    }
   }
 
-  // Éléments complémentaires "autres" saisis librement par l'utilisateur (hors catalogue),
-  // rattachés à chaque façade (`facade.customExtras`).
-  function getFacadeCustomExtras(facade) {
-    if (!facade.customExtras) facade.customExtras = [];
-    return facade.customExtras;
+  function getFacadeExtraItems(facade) {
+    migrateFacadeExtraItems(facade);
+    return facade.extraItems;
   }
 
   function htTtc(ht, tva) {
@@ -160,10 +177,8 @@
 
   function computeFacadeExtrasTotals(facade) {
     let ht = 0, ttc = 0;
-    for (const item of EXTRAS_CATALOG) {
-      const e = getExtraEntry(facade, item.key);
-      const lineHt = (e.qty || 0) * (e.prix || 0);
-      const line = htTtc(lineHt, e.tva);
+    for (const ex of getFacadeExtraItems(facade)) {
+      const line = htTtc((ex.qty || 0) * (ex.prix || 0), ex.tva);
       ht += line.ht;
       ttc += line.ttc;
     }
@@ -172,13 +187,6 @@
       if (z.kind !== "autre") continue;
       const lineHt = zoneArea(z) * (z.prix || 0);
       const line = htTtc(lineHt, z.tva);
-      ht += line.ht;
-      ttc += line.ttc;
-    }
-    // Éléments complémentaires "autres" saisis librement (hors catalogue fixe).
-    for (const ex of getFacadeCustomExtras(facade)) {
-      const lineHt = (ex.qty || 0) * (ex.prix || 0);
-      const line = htTtc(lineHt, ex.tva);
       ht += line.ht;
       ttc += line.ttc;
     }
@@ -1211,35 +1219,10 @@
 
   function facadeExtrasHtml(facade) {
     const expanded = expandedFacadeExtras.has(facade.id);
-    const customExtras = getFacadeCustomExtras(facade);
-    const activeCount = EXTRAS_CATALOG.filter((item) => getExtraEntry(facade, item.key).qty > 0).length + customExtras.length;
+    const items = getFacadeExtraItems(facade);
     const totals = computeFacadeExtrasTotals(facade);
 
-    const rows = EXTRAS_CATALOG.map((item) => {
-      const e = getExtraEntry(facade, item.key);
-      const line = htTtc((e.qty || 0) * (e.prix || 0), e.tva);
-      return `
-        <div class="extra-row ${e.qty > 0 ? "extra-row-active" : ""}">
-          <div class="extra-label">${item.label} <span class="extra-unit">(${item.unit})</span></div>
-          <div class="extra-qty-controls">
-            <button type="button" class="btn btn-ghost btn-small" data-action="extra-dec" data-facade-id="${facade.id}" data-key="${item.key}">−</button>
-            <input type="number" class="extra-qty-input" inputmode="decimal" min="0" step="${item.unit === "unité" ? "1" : "0.01"}" value="${e.qty}" data-facade-id="${facade.id}" data-key="${item.key}">
-            <button type="button" class="btn btn-ghost btn-small" data-action="extra-inc" data-facade-id="${facade.id}" data-key="${item.key}">+</button>
-          </div>
-          <div class="extra-price-controls">
-            <label>Prix HT/${item.unit} (€)
-              <input type="number" class="extra-price-input" inputmode="decimal" min="0" step="0.01" value="${e.prix}" data-facade-id="${facade.id}" data-key="${item.key}">
-            </label>
-            <label>TVA (%)
-              <input type="number" class="extra-tva-input" inputmode="decimal" min="0" max="100" step="0.1" value="${e.tva}" data-facade-id="${facade.id}" data-key="${item.key}">
-            </label>
-            <span class="extra-subtotal">HT ${fmt(line.ht, "€")} / TTC ${fmt(line.ttc, "€")}</span>
-          </div>
-        </div>
-      `;
-    }).join("");
-
-    const customRows = customExtras.map((ex) => {
+    const rows = items.map((ex) => {
       const line = htTtc((ex.qty || 0) * (ex.prix || 0), ex.tva);
       return `
         <div class="zone-item">
@@ -1255,13 +1238,12 @@
     return `
       <div class="facade-extras">
         <button type="button" class="facade-extras-toggle" data-action="toggle-extras" data-facade-id="${facade.id}">
-          Éléments complémentaires${activeCount > 0 ? ` (${activeCount} actif${activeCount > 1 ? "s" : ""})` : ""} ${expanded ? "▾" : "▸"}
+          Éléments complémentaires${items.length > 0 ? ` (${items.length})` : ""} ${expanded ? "▾" : "▸"}
         </button>
         <div class="facade-extras-body" ${expanded ? "" : "hidden"}>
-          ${rows}
-          ${customRows}
+          ${rows || '<p class="empty-msg zones-empty">Aucun élément complémentaire pour cette façade.</p>'}
           <div class="add-opening-row">
-            <button class="btn btn-primary btn-small" data-action="add-facade-extra" data-facade-id="${facade.id}">+ Ajouter un élément "autre" (à remplir soi-même)</button>
+            <button class="btn btn-primary btn-small" data-action="add-facade-extra" data-facade-id="${facade.id}">+ Ajouter un élément</button>
           </div>
           <div class="extras-total-row">
             <span>Total éléments (façade)</span>
@@ -2163,7 +2145,7 @@
       const systeme = { isolant, finition, bardageType };
 
       if (isNew) {
-        client.facades.push({ id: uid(), nom, largeur: 0, hauteur: 0, ouvertures: [], systeme, extras: {}, customExtras: [], photos: [] });
+        client.facades.push({ id: uid(), nom, largeur: 0, hauteur: 0, ouvertures: [], systeme, extraItems: [], photos: [] });
       } else {
         facade.nom = nom;
         facade.systeme = systeme;
@@ -2301,13 +2283,21 @@
     setTimeout(() => document.getElementById("m-zone-largeur").focus(), 50);
   }
 
-  // ---------- Actions: élément complémentaire "autre" (façade ITE, saisi librement) ----------
+  // ---------- Actions: élément complémentaire (façade ITE) ----------
 
   function facadeExtraModal(client, facade, extra) {
     const isNew = !extra;
-    const title = isNew ? "Nouvel élément \"autre\"" : "Modifier l'élément";
+    const title = isNew ? "Nouvel élément complémentaire" : "Modifier l'élément";
+    const currentKey = isNew ? "" : (extra.catalogKey || "");
+
+    const catalogOptionsHtml = `<option value="">— Personnalisé —</option>` + EXTRAS_CATALOG.map((item) =>
+      `<option value="${item.key}" ${currentKey === item.key ? "selected" : ""}>${item.label} (${item.unit})</option>`
+    ).join("");
 
     const body = `
+      <label>Élément
+        <select id="m-fextra-catalog">${catalogOptionsHtml}</select>
+      </label>
       <label>Libellé
         <input type="text" id="m-fextra-label" placeholder="Ex: Habillage volet roulant..." value="${isNew ? "" : escapeHtml(extra.label)}">
       </label>
@@ -2332,16 +2322,18 @@
     openModal(title, body, () => {
       const label = document.getElementById("m-fextra-label").value.trim();
       if (!label) { alert("Merci de préciser un libellé."); return false; }
+      const catalogKey = document.getElementById("m-fextra-catalog").value;
       const qty = round2(Math.max(0, parseNum("m-fextra-qty")));
       const unit = document.getElementById("m-fextra-unit").value.trim() || "unité";
       const prix = round2(Math.max(0, parseNum("m-fextra-prix")));
       const tva = round2(Math.min(100, Math.max(0, parseNum("m-fextra-tva"))));
 
-      const customExtras = getFacadeCustomExtras(facade);
+      const items = getFacadeExtraItems(facade);
       if (isNew) {
-        customExtras.push({ id: uid(), label, qty, unit, prix, tva });
+        items.push({ id: uid(), catalogKey, label, qty, unit, prix, tva });
       } else {
         extra.label = label;
+        extra.catalogKey = catalogKey;
         extra.qty = qty;
         extra.unit = unit;
         extra.prix = prix;
@@ -2350,6 +2342,18 @@
       client.updatedAt = Date.now();
       Store.upsertClient(client);
       renderClientView();
+    });
+
+    const catalogSelect = document.getElementById("m-fextra-catalog");
+    const labelInput = document.getElementById("m-fextra-label");
+    const unitInput = document.getElementById("m-fextra-unit");
+
+    catalogSelect.addEventListener("change", () => {
+      const item = EXTRAS_CATALOG.find((it) => it.key === catalogSelect.value);
+      if (item) {
+        labelInput.value = item.label;
+        unitInput.value = item.unit;
+      }
     });
 
     setTimeout(() => document.getElementById("m-fextra-label").focus(), 50);
@@ -2485,10 +2489,10 @@
     } else if (action === "add-facade-extra") {
       facadeExtraModal(client, facade, null);
     } else if (action === "edit-facade-extra") {
-      const extra = getFacadeCustomExtras(facade).find((ex) => ex.id === btn.dataset.extraId);
+      const extra = getFacadeExtraItems(facade).find((ex) => ex.id === btn.dataset.extraId);
       if (extra) facadeExtraModal(client, facade, extra);
     } else if (action === "delete-facade-extra") {
-      facade.customExtras = getFacadeCustomExtras(facade).filter((ex) => ex.id !== btn.dataset.extraId);
+      facade.extraItems = getFacadeExtraItems(facade).filter((ex) => ex.id !== btn.dataset.extraId);
       client.updatedAt = Date.now();
       Store.upsertClient(client);
       renderClientView();
@@ -2518,85 +2522,6 @@
     renderTotals(client);
   });
 
-  // ---------- Éléments complémentaires (par façade) : évènements ----------
-
-  function setExtraQty(client, facade, key, qty) {
-    const catalogItem = EXTRAS_CATALOG.find((it) => it.key === key);
-    const step = catalogItem.unit === "unité" ? 1 : 0.01;
-    const rounded = Math.round(Math.max(0, qty) / step) * step;
-    const entry = getExtraEntry(facade, key);
-    entry.qty = round2(rounded);
-    client.updatedAt = Date.now();
-    Store.upsertClient(client);
-    renderFacadeList(client);
-    renderTotals(client);
-  }
-
-  function setExtraPrix(client, facade, key, prix) {
-    const entry = getExtraEntry(facade, key);
-    entry.prix = round2(Math.max(0, prix));
-    client.updatedAt = Date.now();
-    Store.upsertClient(client);
-    renderFacadeList(client);
-    renderTotals(client);
-  }
-
-  function setExtraTva(client, facade, key, tva) {
-    const entry = getExtraEntry(facade, key);
-    entry.tva = round2(Math.min(100, Math.max(0, tva)));
-    client.updatedAt = Date.now();
-    Store.upsertClient(client);
-    renderFacadeList(client);
-    renderTotals(client);
-  }
-
-  facadeListEl.addEventListener("click", (e) => {
-    const btn = e.target.closest("button[data-action='extra-inc'], button[data-action='extra-dec']");
-    if (!btn) return;
-    const client = Store.getClient(currentClientId);
-    if (!client) return;
-    const facade = client.facades.find((f) => f.id === btn.dataset.facadeId);
-    if (!facade) return;
-    const key = btn.dataset.key;
-    const current = getExtraEntry(facade, key).qty || 0;
-    const catalogItem = EXTRAS_CATALOG.find((it) => it.key === key);
-    const step = catalogItem.unit === "unité" ? 1 : 0.5;
-
-    if (btn.dataset.action === "extra-inc") {
-      setExtraQty(client, facade, key, current + step);
-    } else if (btn.dataset.action === "extra-dec") {
-      setExtraQty(client, facade, key, current - step);
-    }
-  });
-
-  facadeListEl.addEventListener("change", (e) => {
-    const client = Store.getClient(currentClientId);
-    if (!client) return;
-
-    const qtyInput = e.target.closest(".extra-qty-input");
-    if (qtyInput) {
-      const facade = client.facades.find((f) => f.id === qtyInput.dataset.facadeId);
-      if (!facade) return;
-      const val = parseFloat((qtyInput.value || "0").replace(",", "."));
-      setExtraQty(client, facade, qtyInput.dataset.key, isNaN(val) ? 0 : val);
-      return;
-    }
-    const priceInput = e.target.closest(".extra-price-input");
-    if (priceInput) {
-      const facade = client.facades.find((f) => f.id === priceInput.dataset.facadeId);
-      if (!facade) return;
-      const val = parseFloat((priceInput.value || "0").replace(",", "."));
-      setExtraPrix(client, facade, priceInput.dataset.key, isNaN(val) ? 0 : val);
-      return;
-    }
-    const tvaInput = e.target.closest(".extra-tva-input");
-    if (tvaInput) {
-      const facade = client.facades.find((f) => f.id === tvaInput.dataset.facadeId);
-      if (!facade) return;
-      const val = parseFloat((tvaInput.value || "0").replace(",", "."));
-      setExtraTva(client, facade, tvaInput.dataset.key, isNaN(val) ? 0 : val);
-    }
-  });
 
   // ---------- Intérieur (ITI) : recherche, modals, évènements ----------
 
@@ -3660,22 +3585,15 @@
         </tr>`;
       }).join("");
 
-      const extrasRows = EXTRAS_CATALOG.map((item) => {
-        const e = getExtraEntry(f, item.key);
-        if (!e.qty) return "";
-        const line = htTtc(e.qty * e.prix, e.tva);
-        return `<tr><td>${escapeHtml(item.label)}</td><td>${e.qty} ${item.unit}</td><td>${fmt(e.prix, "€")}</td><td>${fmt(line.ht, "€")}</td><td>${fmt(line.ttc, "€")}</td></tr>`;
+      const extrasRows = getFacadeExtraItems(f).map((ex) => {
+        const line = htTtc((ex.qty || 0) * (ex.prix || 0), ex.tva);
+        return `<tr><td>${escapeHtml(ex.label)}</td><td>${ex.qty} ${escapeHtml(ex.unit)}</td><td>${fmt(ex.prix, "€")}</td><td>${fmt(line.ht, "€")}</td><td>${fmt(line.ttc, "€")}</td></tr>`;
       }).join("");
 
       const autreZonesRows = (f.zones || []).filter((z) => z.kind === "autre").map((z) => {
         const a = zoneArea(z);
         const line = htTtc(a * (z.prix || 0), z.tva);
         return `<tr><td>${escapeHtml(z.label)}</td><td>${fmt(a, "m²")}</td><td>${fmt(z.prix, "€")}</td><td>${fmt(line.ht, "€")}</td><td>${fmt(line.ttc, "€")}</td></tr>`;
-      }).join("");
-
-      const customExtrasRows = getFacadeCustomExtras(f).map((ex) => {
-        const line = htTtc((ex.qty || 0) * (ex.prix || 0), ex.tva);
-        return `<tr><td>${escapeHtml(ex.label)}</td><td>${ex.qty} ${escapeHtml(ex.unit)}</td><td>${fmt(ex.prix, "€")}</td><td>${fmt(line.ht, "€")}</td><td>${fmt(line.ttc, "€")}</td></tr>`;
       }).join("");
 
       const sketchHtml = f.sketch ? `<img src="${f.sketch}">` : "";
@@ -3690,7 +3608,7 @@
             ${photosHtml ? `<div class="print-photo-block"><span class="print-photo-label">Photos</span><div class="print-photos-inline">${photosHtml}</div></div>` : ""}
           </div>` : ""}
           ${openingsRows ? `<table class="print-table"><thead><tr><th>Ouverture</th><th>Dimensions</th><th>Surface</th><th>Tableau</th><th>Appui</th></tr></thead><tbody>${openingsRows}</tbody></table>` : ""}
-          ${(extrasRows || autreZonesRows || customExtrasRows) ? `<table class="print-table"><thead><tr><th>Élément complémentaire</th><th>Qté</th><th>Prix HT</th><th>Total HT</th><th>Total TTC</th></tr></thead><tbody>${extrasRows}${autreZonesRows}${customExtrasRows}</tbody></table>` : ""}
+          ${(extrasRows || autreZonesRows) ? `<table class="print-table"><thead><tr><th>Élément complémentaire</th><th>Qté</th><th>Prix HT</th><th>Total HT</th><th>Total TTC</th></tr></thead><tbody>${extrasRows}${autreZonesRows}</tbody></table>` : ""}
         </div>
       `;
     }).join("");
