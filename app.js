@@ -1364,6 +1364,7 @@
             <div class="facade-name">${escapeHtml(f.nom)}</div>
             <div class="facade-dims ${dimsSet ? "" : "facade-dims-missing"}">${dimsSet ? `Surface brute : ${fmt(c.brute, "m²")}` : "⚠ Dimensions non définies — dessinez une zone (rectangle/triangle) dans le croquis"}</div>
             <div class="systeme-badge">${escapeHtml(systemeLabel(f.systeme))}</div>
+            ${f.notes ? `<div class="item-notes">📝 ${escapeHtml(f.notes)}</div>` : ""}
           </div>
           <div class="facade-actions">
             <button class="btn btn-ghost btn-small" data-action="edit-facade" data-facade-id="${f.id}">Modifier</button>
@@ -1505,6 +1506,7 @@
           <button class="btn btn-ghost btn-small" data-action="edit-mesure" data-poste-id="${poste.id}" data-mesure-id="${m.id}">Modifier</button>
           <button class="btn btn-danger btn-small" data-action="delete-mesure" data-poste-id="${poste.id}" data-mesure-id="${m.id}">✕</button>
         </div>
+        ${m.notes ? `<div class="item-notes">📝 ${escapeHtml(m.notes)}</div>` : ""}
         ${photoGalleryHtml(m.photos, `data-poste-id="${poste.id}" data-mesure-id="${m.id}"`, true)}
       </div>
     `).join("");
@@ -2210,6 +2212,9 @@
       <label id="m-facade-bardage-wrap" hidden>Type de bardage
         <input type="text" id="m-facade-bardage" placeholder="Ex: Clins bois composite, Trespa gris anthracite..." value="${escapeHtml(sys.bardageType || "")}">
       </label>
+      <label>Notes
+        <textarea id="m-facade-notes" rows="2" placeholder="Remarques sur cette façade...">${isNew ? "" : escapeHtml(facade.notes || "")}</textarea>
+      </label>
     `;
 
     openModal(title, body, () => {
@@ -2219,12 +2224,14 @@
       const finition = document.getElementById("m-facade-finition").value;
       const bardageType = finition === "bardage" ? document.getElementById("m-facade-bardage").value.trim() : "";
       const systeme = { isolant, finition, bardageType };
+      const notes = document.getElementById("m-facade-notes").value.trim();
 
       if (isNew) {
-        client.facades.push({ id: uid(), nom, largeur: 0, hauteur: 0, ouvertures: [], systeme, extraItems: [], photos: [] });
+        client.facades.push({ id: uid(), nom, largeur: 0, hauteur: 0, ouvertures: [], systeme, extraItems: [], photos: [], notes });
       } else {
         facade.nom = nom;
         facade.systeme = systeme;
+        facade.notes = notes;
       }
       client.updatedAt = Date.now();
       Store.upsertClient(client);
@@ -2743,22 +2750,27 @@
           <input type="number" id="m-mesure-qty" step="1" min="1" value="${isNew ? "1" : mesure.qty}">
         </label>
       </div>
+      <label>Notes
+        <textarea id="m-mesure-notes" rows="2" placeholder="Remarques sur cette cote...">${isNew ? "" : escapeHtml(mesure.notes || "")}</textarea>
+      </label>
     `;
     openModal(title, body, () => {
       const localisation = document.getElementById("m-mesure-loc").value.trim() || "Sans nom";
       const largeur = parseNum("m-mesure-largeur");
       const hauteur = parseNum("m-mesure-hauteur");
       const qty = Math.max(1, Math.round(parseNum("m-mesure-qty") || 1));
+      const notes = document.getElementById("m-mesure-notes").value.trim();
       if (largeur <= 0 || hauteur <= 0) { alert("Merci de renseigner largeur et hauteur."); return false; }
 
       if (isNew) {
         if (!poste.mesures) poste.mesures = [];
-        poste.mesures.push({ id: uid(), localisation, largeur, hauteur, qty, photos: [] });
+        poste.mesures.push({ id: uid(), localisation, largeur, hauteur, qty, notes, photos: [] });
       } else {
         mesure.localisation = localisation;
         mesure.largeur = largeur;
         mesure.hauteur = hauteur;
         mesure.qty = qty;
+        mesure.notes = notes;
       }
       const client2 = Store.getClient(currentClientId);
       client2.updatedAt = Date.now();
@@ -3679,6 +3691,7 @@
         <div class="print-section">
           <h3>${escapeHtml(f.nom)} <span class="print-badge">${escapeHtml(systemeLabel(f.systeme))}</span></h3>
           <p>Surface brute : ${fmt(c.brute, "m²")} — Surface nette à isoler : ${fmt(c.nette, "m²")} — Tableaux : ${fmt(c.tableau, "ml")} — Appuis : ${fmt(c.appui, "ml")}</p>
+          ${f.notes ? `<p class="item-notes">📝 ${escapeHtml(f.notes)}</p>` : ""}
           ${(sketchHtml || photosHtml) ? `<div class="print-photos">
             ${sketchHtml ? `<div class="print-photo-block"><span class="print-photo-label">Croquis</span>${sketchHtml}</div>` : ""}
             ${photosHtml ? `<div class="print-photo-block"><span class="print-photo-label">Photos</span><div class="print-photos-inline">${photosHtml}</div></div>` : ""}
@@ -3722,7 +3735,7 @@
 
         const mesuresRows = (poste.mesures || []).map((m) => {
           const photos = (m.photos || []).map((p) => `<img src="${p.dataUrl}">`).join("");
-          return `<tr><td>${escapeHtml(m.localisation)}</td><td>${m.largeur.toFixed(2)} × ${m.hauteur.toFixed(2)} m ${m.qty > 1 ? "× " + m.qty : ""}</td><td>${fmt(computeMesureArea(m), "m²")}</td><td>${photos ? `<div class="print-photos-inline">${photos}</div>` : "-"}</td></tr>`;
+          return `<tr><td>${escapeHtml(m.localisation)}${m.notes ? `<div class="item-notes">📝 ${escapeHtml(m.notes)}</div>` : ""}</td><td>${m.largeur.toFixed(2)} × ${m.hauteur.toFixed(2)} m ${m.qty > 1 ? "× " + m.qty : ""}</td><td>${fmt(computeMesureArea(m), "m²")}</td><td>${photos ? `<div class="print-photos-inline">${photos}</div>` : "-"}</td></tr>`;
         }).join("");
 
         const ouverturesRows = (poste.ouvertures || []).map((o) => {

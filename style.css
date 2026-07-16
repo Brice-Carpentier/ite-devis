@@ -377,6 +377,13 @@ label {
   color: var(--text-muted);
 }
 
+.item-notes {
+  margin-top: 4px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .facade-actions { display: flex; gap: 8px; }
 
 .facade-metrics {
