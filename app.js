@@ -529,6 +529,48 @@
     return { nette, tableau, appui };
   }
 
+  // ---------- Stockage local des médias (photos, croquis) via IndexedDB ----------
+  // Quota bien plus large que localStorage (souvent 5-10 Mo), adapté aux images en base64.
+
+  const MEDIA_DB_NAME = "ite_devis_media";
+  const MEDIA_STORE_NAME = "media";
+  let mediaDbPromise = null;
+
+  function openMediaDb() {
+    if (mediaDbPromise) return mediaDbPromise;
+    mediaDbPromise = new Promise((resolve, reject) => {
+      const req = indexedDB.open(MEDIA_DB_NAME, 1);
+      req.onupgradeneeded = () => { req.result.createObjectStore(MEDIA_STORE_NAME); };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return mediaDbPromise;
+  }
+
+  function idbSaveMedia(id, dataUrl) {
+    return openMediaDb().then((db) => new Promise((resolve, reject) => {
+      const tx = db.transaction(MEDIA_STORE_NAME, "readwrite");
+      tx.objectStore(MEDIA_STORE_NAME).put(dataUrl, id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    }));
+  }
+
+  function idbLoadAllMedia() {
+    return openMediaDb().then((db) => new Promise((resolve, reject) => {
+      const tx = db.transaction(MEDIA_STORE_NAME, "readonly");
+      const store = tx.objectStore(MEDIA_STORE_NAME);
+      const result = new Map();
+      const cursorReq = store.openCursor();
+      cursorReq.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor) { result.set(cursor.key, cursor.value); cursor.continue(); }
+        else resolve(result);
+      };
+      cursorReq.onerror = () => reject(cursorReq.error);
+    }));
+  }
+
   // ---------- Store ----------
 
   const Store = {
@@ -541,10 +583,44 @@
         console.error("Erreur de lecture du stockage local", e);
         this.data = [];
       }
+      // Les photos/croquis ont été retirés du JSON stocké dans localStorage (voir save()) et
+      // vivent dans IndexedDB à la place — on les recharge en tâche de fond, sans bloquer
+      // l'affichage immédiat du texte/chiffres.
+      this.hydrateMediaFromIndexedDb();
+    },
+    hydrateMediaFromIndexedDb() {
+      idbLoadAllMedia().then((mediaMap) => {
+        let changed = false;
+        for (const client of this.data) {
+          for (const ref of collectMediaRefs(client)) {
+            if (!ref.get() && mediaMap.has(ref.id)) {
+              ref.set(mediaMap.get(ref.id));
+              changed = true;
+            }
+          }
+        }
+        if (changed) refreshCurrentView();
+      }).catch((err) => console.error("Échec de lecture des médias locaux (IndexedDB)", err));
     },
     save() {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
+        // Les photos (dataUrl) et croquis sont volumineux : les stocker en clair dans le JSON
+        // localStorage fait vite dépasser le quota du navigateur (souvent 5-10 Mo) une fois
+        // plusieurs clients/façades photographiés — d'où des échecs de sauvegarde qui
+        // apparaissaient sur tous les appareils au fil du temps. On les retire donc du JSON
+        // stocké ici (ils restent en mémoire pour l'affichage) et on les persiste à part dans
+        // IndexedDB, dont le quota est très supérieur.
+        const stripped = JSON.parse(JSON.stringify(this.data));
+        const mediaToSave = [];
+        for (const client of stripped) {
+          for (const ref of collectMediaRefs(client)) {
+            const value = ref.get();
+            if (value) mediaToSave.push({ id: ref.id, dataUrl: value });
+            ref.set(null);
+          }
+        }
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(stripped));
+        for (const m of mediaToSave) idbSaveMedia(m.id, m.dataUrl).catch((err) => console.error("Échec de sauvegarde locale d'un média (IndexedDB)", err));
         return true;
       } catch (e) {
         console.error("Erreur d'écriture du stockage local", e);
